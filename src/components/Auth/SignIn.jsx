@@ -116,7 +116,6 @@ const SignIn = ({ onClose }) => {
             className="text-xl font-bold tracking-tight"
             style={{ color: "var(--color-text)" }}
           >
-            t
             <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>
               IF
             </span>
