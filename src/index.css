@@ -1,0 +1,317 @@
+@import "tailwindcss";
+
+:root {
+  --color-background: #f9f7f0;
+  --color-surface: #f0ede4;
+  --color-toolbar: #ede9de;
+  --color-input: #e8e3d6;
+  --color-hover: #ddd8ca;
+  --color-border: #cdc8b4;
+  --color-border-lt: #ddd8c8;
+
+  --color-text: #33302a;
+  --color-text-sec: #6b6457;
+  --color-text-muted: #9c9080;
+
+  --color-primary: #ebd05e;
+  --color-primary-hv: #d9be4a;
+  --color-primary-dk: #6b5200;
+  --color-primary-bg: rgba(235, 208, 94, 0.18);
+
+  --color-danger: #dc2626;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button {
+  cursor: pointer;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── TipTap prose ─────────────────────────────────────────────── */
+.tiptap {
+  outline: none;
+  min-height: 200px;
+  color: var(--color-text);
+}
+.tiptap p {
+  margin: 0 0 0.5rem;
+}
+.tiptap h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 1rem 0 0.4rem;
+}
+.tiptap ul {
+  list-style: disc;
+  padding-left: 1.4rem;
+  margin: 0.4rem 0;
+}
+.tiptap ol {
+  list-style: decimal;
+  padding-left: 1.4rem;
+  margin: 0.4rem 0;
+}
+.tiptap code {
+  background: var(--color-primary-bg);
+  color: var(--color-primary-dk);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+
+/* ── VS Code-style code blocks ────────────────────────────────── */
+.tiptap .code-block-wrapper {
+  margin: 1rem 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #3c3c3c;
+  font-size: 0.875rem;
+}
+.tiptap .code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #2d2d2d;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid #3c3c3c;
+  user-select: none;
+}
+.tiptap .code-block-lang-select {
+  background: transparent;
+  border: none;
+  color: #9d9d9d;
+  font-size: 0.75rem;
+  cursor: pointer;
+  outline: none;
+}
+.tiptap .code-block-lang-select option {
+  background: #2d2d2d;
+  color: #d4d4d4;
+}
+.tiptap .code-block-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #9d9d9d;
+  font-size: 0.7rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.tiptap .code-block-copy-btn:hover {
+  color: #d4d4d4;
+  background: #3c3c3c;
+}
+.tiptap pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  margin: 0;
+  font-family:
+    "Cascadia Code", "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  tab-size: 2;
+}
+.tiptap pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+/* NodeViewContent renders as a div inside pre — keep it inline */
+.tiptap pre > div {
+  display: contents;
+}
+
+/* lowlight / hljs token colors — VS Code Dark+ theme */
+.hljs-comment,
+.hljs-quote {
+  color: #6a9955;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-addition {
+  color: #569cd6;
+}
+.hljs-number,
+.hljs-string,
+.hljs-meta .hljs-meta-string,
+.hljs-literal,
+.hljs-doctag,
+.hljs-regexp {
+  color: #ce9178;
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #dcdcaa;
+}
+.hljs-attribute,
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-class .hljs-title,
+.hljs-type {
+  color: #9cdcfe;
+}
+.hljs-symbol,
+.hljs-bullet,
+.hljs-subst,
+.hljs-meta,
+.hljs-link {
+  color: #4ec9b0;
+}
+.hljs-built_in,
+.hljs-deletion {
+  color: #4ec9b0;
+}
+.hljs-formula {
+  color: #d4d4d4;
+}
+.hljs-tag {
+  color: #808080;
+}
+.hljs-punctuation {
+  color: #d4d4d4;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: bold;
+}
+
+.tiptap a {
+  color: var(--color-primary-dk);
+  text-decoration: underline;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* ── Grid / Table ─────────────────────────────────────────────── */
+.tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75rem 0 1rem;
+  table-layout: fixed;
+  font-family: "ui-monospace", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.84rem;
+}
+.tiptap table th,
+.tiptap table td {
+  position: relative;
+  border: 1px var(--table-border-style, solid)
+    var(--table-border-color, #f5f5f4);
+  padding: 0.35rem 0.65rem;
+  vertical-align: top;
+  min-width: 80px;
+  word-break: break-word;
+  color: var(--color-text);
+  font-weight: normal;
+}
+.tiptap table th {
+  background: transparent;
+  color: var(--color-primary-dk);
+  text-align: left;
+}
+/* Multi-cell selection — must be clearly visible */
+.tiptap table .selectedCell {
+  background: rgba(99, 102, 241, 0.25) !important;
+  outline: 2px solid rgba(99, 102, 241, 0.7);
+  outline-offset: -2px;
+  border-color: #d6d3d1;
+}
+
+/* ── Mention chip ─────────────────────────────────────────────── */
+.mention {
+  color: var(--color-primary-dk);
+  font-weight: 600;
+}
+
+/* ── Table column resize handle ──────────────────────────────── */
+.tiptap .tableWrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+/* prosemirror-tables injects .column-resize-handle inside cells
+   only while cursor is in the table — just style it, no hiding */
+.column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  z-index: 20;
+  pointer-events: none;
+  background-color: var(--color-primary);
+  opacity: 0.6;
+  border-radius: 2px;
+  transition: opacity 0.1s ease;
+}
+.column-resize-handle:hover {
+  opacity: 1;
+}
+/* Highlight while dragging */
+.column-resize-dragging {
+  background-color: var(--color-primary) !important;
+  opacity: 1 !important;
+}
+.resize-cursor,
+.resize-cursor * {
+  cursor: col-resize !important;
+}
+
+/* ── Commented lines (Cmd+/ toggle) ─────────────────────────────────── */
+.ProseMirror p[data-commented="true"] {
+  color: #a8a29e; /* stone-400 */
+  font-style: italic;
+  position: relative;
+}
+.ProseMirror p[data-commented="true"]::before {
+  content: "// ";
+  color: #a8a29e;
+  font-style: normal;
+  user-select: none;
+  pointer-events: none;
+}
+/* Suppress mention chip rendering inside commented lines */
+.ProseMirror p[data-commented="true"] .mention {
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
