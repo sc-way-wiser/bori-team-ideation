@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import ReactDOM from "react-dom";
 import {
-  MagnifyingGlassIcon as SearchIcon,
+  MagnifyingGlassIcon,
   PlusIcon,
   FolderSimplePlusIcon as FolderPlusIcon,
   FileTextIcon,
@@ -22,12 +22,123 @@ import {
   PencilSimpleIcon as EditIcon,
   LinkSimpleIcon,
   LightbulbIcon,
+  UsersIcon,
 } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { useNoteStore } from "../../store/useNoteStore.js";
 import { fetchAdminUsers } from "../../services/noteService.js";
 import BottomSheet from "../ui/BottomSheet.jsx";
 import useBrowser from "../../hooks/useBrowserDetect.jsx";
+
+// ── Move-to Popover ──────────────────────────────────────────────────────────
+const MoveToPopover = ({
+  note,
+  anchorRect,
+  folders,
+  defaultFolderName,
+  onMove,
+  onClose,
+}) => {
+  const [search, setSearch] = useState("");
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    const close = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [onClose]);
+
+  const rootLabel = defaultFolderName || "Notes";
+  const allFolders = [{ id: null, name: rootLabel }, ...folders];
+  const filtered = search.trim()
+    ? allFolders.filter((f) =>
+        f.name.toLowerCase().includes(search.trim().toLowerCase()),
+      )
+    : allFolders;
+
+  const POP_W = 240;
+  return ReactDOM.createPortal(
+    <div
+      data-portal
+      ref={popRef}
+      style={{
+        position: "fixed",
+        bottom: window.innerHeight - anchorRect.top + 8,
+        right: Math.min(
+          window.innerWidth - anchorRect.right,
+          window.innerWidth - POP_W - 8,
+        ),
+        zIndex: 9999,
+        width: POP_W,
+        maxHeight: 320,
+      }}
+      className="bg-(--color-surface) border border-(--color-border) rounded-xl shadow-xl flex flex-col overflow-hidden"
+    >
+      {/* Search */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-(--color-border)">
+        <MagnifyingGlassIcon
+          size={13}
+          className="text-(--color-text-muted) shrink-0"
+        />
+        <input
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search folders…"
+          className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            className="text-(--color-text-muted) hover:text-(--color-text)"
+          >
+            <XIcon size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Folder list */}
+      <div className="overflow-y-auto flex-1">
+        {filtered.length === 0 ? (
+          <p className="text-xs text-(--color-text-muted) text-center py-4">
+            No folders found
+          </p>
+        ) : (
+          filtered.map((f) => {
+            const isCurrent = note
+              ? f.id === null
+                ? note.folderId == null
+                : note.folderId === f.id
+              : false;
+            return (
+              <button
+                key={f.id ?? "__root__"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMove(e, f.id);
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors ${
+                  isCurrent
+                    ? "bg-(--color-primary-bg) text-(--color-primary-dk) font-semibold"
+                    : "text-(--color-text) hover:bg-(--color-hover)"
+                }`}
+              >
+                <FolderIcon size={14} className="shrink-0" />
+                <span className="flex-1 truncate">{f.name}</span>
+                {isCurrent && (
+                  <CheckIcon size={13} className="shrink-0 ml-auto" />
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+};
 
 // ── Bulk Share Popover ────────────────────────────────────────────────────────
 const BulkSharePopover = ({ noteIds, anchorRect, onClose }) => {
@@ -279,6 +390,7 @@ const NoteRow = ({
     activeNoteId,
     setActiveNote,
     currentUserId,
+    defaultFolderName,
     requestEditAccess,
     thinkingNoteIds,
   } = useNoteStore();
@@ -288,6 +400,7 @@ const NoteRow = ({
   const hasRequested = (note.editRequests ?? []).includes(currentUserId);
   const hasLinkedNote = notes.some((n) => n.originNoteId === note.id);
   const { isMobile } = useBrowser();
+  const [isMoving, setIsMoving] = useState(false);
 
   // Detect if this is User B's own note sitting in a shared folder
   const isInSharedFolder =
@@ -305,12 +418,15 @@ const NoteRow = ({
   const { shareToFolderCollaborators } = useNoteStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [moveAnchorRect, setMoveAnchorRect] = useState(null);
   // sheet-level sub-view: null | "move"
   const [sheetView, setSheetView] = useState(null);
+  const [sheetMoveSearch, setSheetMoveSearch] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAnchorRect, setShareAnchorRect] = useState(null);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const dotsButtonRef = useRef(null);
+  const moveButtonRef = useRef(null);
   const shareButtonRef = useRef(null);
   const mobileShareButtonRef = useRef(null);
   const menuRef = useRef(null);
@@ -344,50 +460,60 @@ const NoteRow = ({
     e?.stopPropagation();
     setMenuOpen(false);
     setMoveOpen(false);
+    setMoveAnchorRect(null);
     setSheetView(null);
-    moveNoteToFolder(note.id, folderId);
+    // Animate note out, then actually move it
+    setIsMoving(true);
+    setTimeout(() => moveNoteToFolder(note.id, folderId), 240);
   };
 
-  // ── Shared folder list (reused in both sheet and dropdown) ───────────
-  const renderFolderList = () => (
-    <>
-      <button
-        onClick={(e) => handleMove(e, null)}
-        className={`w-full flex items-center gap-2 px-4 py-3 text-sm transition-colors ${
-          note.folderId == null
-            ? "text-(--color-primary-dk) font-semibold bg-(--color-primary-bg)"
-            : "text-(--color-text) hover:bg-(--color-hover)"
-        }`}
-      >
-        <FolderIcon size={15} />
-        Notes
-        {note.folderId == null && <CheckIcon size={13} className="ml-auto" />}
-      </button>
-      {folders.map((f) => (
+  // ── Folder list (mobile sheet reuses this with search filter) ───────
+  const renderFolderList = (search = "") => {
+    const q = search.trim().toLowerCase();
+    const rootLabel = defaultFolderName || "Notes";
+    const allFolders = [{ id: null, name: rootLabel }, ...folders];
+    const filtered = q
+      ? allFolders.filter((f) => f.name.toLowerCase().includes(q))
+      : allFolders;
+    if (filtered.length === 0)
+      return (
+        <p className="text-xs text-(--color-text-muted) text-center py-4">
+          No folders found
+        </p>
+      );
+    return filtered.map((f) => {
+      const isCurrent =
+        f.id === null ? note.folderId == null : note.folderId === f.id;
+      return (
         <button
-          key={f.id}
+          key={f.id ?? "__root__"}
           onClick={(e) => handleMove(e, f.id)}
           className={`w-full flex items-center gap-2 px-4 py-3 text-sm transition-colors ${
-            note.folderId === f.id
+            isCurrent
               ? "text-(--color-primary-dk) font-semibold bg-(--color-primary-bg)"
               : "text-(--color-text) hover:bg-(--color-hover)"
           }`}
         >
           <FolderIcon size={15} />
           <span className="truncate">{f.name}</span>
-          {note.folderId === f.id && (
-            <CheckIcon size={13} className="ml-auto" />
-          )}
+          {isCurrent && <CheckIcon size={13} className="ml-auto" />}
         </button>
-      ))}
-    </>
-  );
+      );
+    });
+  };
 
   return (
     <li
       draggable
       onDragStart={onDragStart}
       className="cursor-grab active:cursor-grabbing"
+      style={{
+        transition: "opacity 240ms ease, transform 240ms ease",
+        opacity: isMoving ? 0 : 1,
+        transform: isMoving
+          ? "translateX(18px) scale(0.96)"
+          : "translateX(0) scale(1)",
+      }}
     >
       <div
         className={`flex items-center gap-0.5 mb-0.5 pr-1 transition-colors group/nr ${
@@ -408,7 +534,13 @@ const NoteRow = ({
               : "border-(--color-border) hover:border-(--color-primary-dk)"
           }`}
         >
-          {isSelected && <CheckIcon size={10} color="white" weight="bold" />}
+          {isSelected && (
+            <CheckIcon
+              size={12}
+              color="text-(--color-on-primary)"
+              weight="bold"
+            />
+          )}
         </button>
 
         <button
@@ -436,7 +568,7 @@ const NoteRow = ({
         {/* Thinking indicator */}
         {isThinking && (
           <span className="shrink-0 p-1 text-(--color-primary-dk)">
-            <LightbulbIcon size={16} weight="fill" />
+            <LightbulbIcon size={16} weight="bold" />
           </span>
         )}
 
@@ -450,7 +582,7 @@ const NoteRow = ({
         {/* Shared indicator */}
         {shared && (
           <span className="shrink-0 p-1 text-(--color-primary-dk)/70">
-            <UserPlusIcon size={18} />
+            <UsersIcon size={18} />
           </span>
         )}
 
@@ -492,7 +624,7 @@ const NoteRow = ({
                   right: menuPos.right,
                   zIndex: 9999,
                 }}
-                className="w-44 bg-(--color-surface) border border-(--color-border) rounded-lg shadow-lg overflow-hidden text-sm"
+                className="w-44 bg-(--color-surface) border border-(--color-border) rounded-3xl shadow-md overflow-hidden text-sm"
               >
                 {isOwner && isInSharedFolder && (
                   <button
@@ -536,7 +668,7 @@ const NoteRow = ({
                     className="w-full flex items-center gap-2 px-3 py-3 hover:bg-(--color-hover) text-(--color-text) transition-colors disabled:opacity-40 disabled:cursor-default"
                   >
                     <LinkSimpleIcon size={14} />
-                    Add linked note
+                    Add explicit note
                   </button>
                 )}
 
@@ -562,27 +694,27 @@ const NoteRow = ({
                 )}
 
                 {isOwner && (
-                  <div
-                    className="relative"
-                    onMouseEnter={() => setMoveOpen(true)}
-                    onMouseLeave={() => setMoveOpen(false)}
+                  <button
+                    ref={moveButtonRef}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      const rect =
+                        moveButtonRef.current?.getBoundingClientRect();
+                      setMoveAnchorRect(rect ?? null);
+                      setMoveOpen((v) => !v);
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-3 hover:bg-(--color-hover) text-(--color-text) transition-colors"
                   >
-                    <button className="w-full flex items-center justify-between gap-2 px-3 py-3 hover:bg-(--color-hover) text-(--color-text) transition-colors">
-                      <span className="flex items-center gap-2">
-                        <FolderIcon size={14} />
-                        Move to…
-                      </span>
-                      <ArrowRightIcon
-                        size={12}
-                        className="text-(--color-text-muted)"
-                      />
-                    </button>
-                    {moveOpen && (
-                      <div className="absolute left-full top-0 ml-1 w-44 bg-(--color-surface) border border-(--color-border) rounded-lg shadow-lg overflow-hidden">
-                        {renderFolderList()}
-                      </div>
-                    )}
-                  </div>
+                    <span className="flex items-center gap-2">
+                      <FolderIcon size={14} />
+                      Move to…
+                    </span>
+                    <ArrowRightIcon
+                      size={12}
+                      className="text-(--color-text-muted)"
+                    />
+                  </button>
                 )}
 
                 {isOwner && (
@@ -608,6 +740,24 @@ const NoteRow = ({
               onClose={() => setShareOpen(false)}
             />
           )}
+          {/* Move-to popover */}
+          {moveOpen && moveAnchorRect && (
+            <MoveToPopover
+              note={note}
+              anchorRect={moveAnchorRect}
+              folders={folders}
+              defaultFolderName={defaultFolderName}
+              onMove={(e, folderId) => {
+                handleMove(e, folderId);
+                setMoveOpen(false);
+                setMoveAnchorRect(null);
+              }}
+              onClose={() => {
+                setMoveOpen(false);
+                setMoveAnchorRect(null);
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -626,7 +776,30 @@ const NoteRow = ({
         minHeight="auto"
       >
         {sheetView === "move" ? (
-          <div className="pb-6">{renderFolderList()}</div>
+          <div className="pb-6">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-(--color-border)">
+              <MagnifyingGlassIcon
+                size={13}
+                className="text-(--color-text-muted) shrink-0"
+              />
+              <input
+                autoFocus
+                value={sheetMoveSearch}
+                onChange={(e) => setSheetMoveSearch(e.target.value)}
+                placeholder="Search folders…"
+                className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
+              />
+              {sheetMoveSearch && (
+                <button
+                  onClick={() => setSheetMoveSearch("")}
+                  className="text-(--color-text-muted) hover:text-(--color-text)"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
+            {renderFolderList(sheetMoveSearch)}
+          </div>
         ) : (
           <div className="pb-6">
             {/* Note title */}
@@ -680,7 +853,7 @@ const NoteRow = ({
                 className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-(--color-text) hover:bg-(--color-hover) transition-colors disabled:opacity-40 disabled:cursor-default"
               >
                 <LinkSimpleIcon size={18} />
-                Add linked note
+                Add explicit note
               </button>
             )}
 
@@ -708,7 +881,10 @@ const NoteRow = ({
             {/* Move to — owner only */}
             {isOwner && (
               <button
-                onClick={() => setSheetView("move")}
+                onClick={() => {
+                  setSheetView("move");
+                  setSheetMoveSearch("");
+                }}
                 className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-sm text-(--color-text) hover:bg-(--color-hover) transition-colors"
               >
                 <span className="flex items-center gap-3">
@@ -927,7 +1103,11 @@ const FolderSection = ({
                   }`}
                 >
                   {isAllSelected && (
-                    <CheckIcon size={10} color="white" weight="bold" />
+                    <CheckIcon
+                      size={10}
+                      color="text-(--color-on-primary)"
+                      weight="bold"
+                    />
                   )}
                   {isPartialSelected && !isAllSelected && (
                     <span
@@ -935,7 +1115,7 @@ const FolderSection = ({
                         width: 8,
                         height: 2,
                         borderRadius: 1,
-                        backgroundColor: "white",
+                        backgroundColor: "var(--color-on-primary)",
                         display: "block",
                       }}
                     />
@@ -1003,7 +1183,10 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
   const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
   const [bulkShareOpen, setBulkShareOpen] = useState(false);
   const [bulkShareAnchor, setBulkShareAnchor] = useState(null);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveAnchor, setBulkMoveAnchor] = useState(null);
   const shareFloatRef = useRef(null);
+  const moveFloatRef = useRef(null);
   const draggingNoteId = useRef(null);
 
   const toggleNoteSelect = (id) =>
@@ -1100,9 +1283,9 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-(--color-border)">
+      <div className="p-3 ">
         <div className="flex items-center gap-2 bg-(--color-input) rounded-full px-3 py-3">
-          <SearchIcon
+          <MagnifyingGlassIcon
             size={16}
             className="text-(--color-text-muted) shrink-0"
           />
@@ -1120,21 +1303,21 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
       </div>
 
       {/* + Note / + Folder */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-(--color-border)">
+      <div className="flex items-center gap-1.5 px-3 pb-4 bg-(--color-background) border-b border-(--color-border)">
         <button
           onClick={() => {
             const id = createNote(null);
             onNoteSelect(id);
           }}
-          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-xs font-medium bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-on-primary) transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-sm font-bold bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-on-primary) transition-colors"
         >
-          <PlusIcon size={15} /> Note
+          <PlusIcon size={18} /> Note
         </button>
         <button
           onClick={() => createFolder("New Folder")}
-          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-xs font-medium bg-(--color-input) hover:bg-(--color-hover) text-(--color-text-sec) transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-sm font-bold bg-(--color-input) hover:bg-(--color-hover) text-(--color-text-sec) transition-colors"
         >
-          <FolderPlusIcon size={15} /> Folder
+          <FolderPlusIcon size={18} /> Folder
         </button>
       </div>
 
@@ -1372,20 +1555,36 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
         </div>
       </div>
 
-      {/* Floating bulk-share button */}
+      {/* Floating bulk action buttons */}
       {selectedNoteIds.size > 0 && (
-        <button
-          ref={shareFloatRef}
-          onClick={() => {
-            const rect = shareFloatRef.current?.getBoundingClientRect();
-            setBulkShareAnchor(rect ?? null);
-            setBulkShareOpen((v) => !v);
-          }}
-          className="absolute bottom-5 right-4 flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-on-primary) text-white text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity z-20"
-        >
-          <ShareNetworkIcon size={15} weight="bold" />
-          Share {selectedNoteIds.size}
-        </button>
+        <div className="absolute bottom-5 right-4 flex items-center gap-2 z-20">
+          <button
+            ref={moveFloatRef}
+            onClick={() => {
+              const rect = moveFloatRef.current?.getBoundingClientRect();
+              setBulkMoveAnchor(rect ?? null);
+              setBulkMoveOpen((v) => !v);
+              setBulkShareOpen(false);
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-surface) border border-(--color-border) text-(--color-text) text-xs font-semibold shadow-lg hover:bg-(--color-hover) transition-colors"
+          >
+            <FolderIcon size={15} weight="bold" />
+            Move {selectedNoteIds.size}
+          </button>
+          <button
+            ref={shareFloatRef}
+            onClick={() => {
+              const rect = shareFloatRef.current?.getBoundingClientRect();
+              setBulkShareAnchor(rect ?? null);
+              setBulkShareOpen((v) => !v);
+              setBulkMoveOpen(false);
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-on-primary) text-white text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity"
+          >
+            <ShareNetworkIcon size={15} weight="bold" />
+            Share {selectedNoteIds.size}
+          </button>
+        </div>
       )}
 
       {bulkShareOpen && bulkShareAnchor && (
@@ -1393,6 +1592,27 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
           noteIds={[...selectedNoteIds]}
           anchorRect={bulkShareAnchor}
           onClose={() => setBulkShareOpen(false)}
+        />
+      )}
+
+      {bulkMoveOpen && bulkMoveAnchor && (
+        <MoveToPopover
+          note={null}
+          anchorRect={bulkMoveAnchor}
+          folders={folders}
+          defaultFolderName={defaultFolderName}
+          onMove={(e, folderId) => {
+            [...selectedNoteIds].forEach((id) =>
+              moveNoteToFolder(id, folderId),
+            );
+            setSelectedNoteIds(new Set());
+            setBulkMoveOpen(false);
+            setBulkMoveAnchor(null);
+          }}
+          onClose={() => {
+            setBulkMoveOpen(false);
+            setBulkMoveAnchor(null);
+          }}
         />
       )}
     </aside>

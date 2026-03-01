@@ -427,12 +427,12 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
 
       // Lightbulb indicator — drawn with canvas primitives
       if (isThinking) {
-        const s = Math.max(3, r * 1.1); // icon size scales with node
+        const s = Math.max(5, r * 1.8); // larger icon, scales with node
         const ix = x;
         const iy = y - r - s * 0.6;
         ctx.save();
         ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = Math.max(0.8, s * 0.1);
+        ctx.lineWidth = Math.max(0.6, s * 0.07);
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         // bulb circle — stroke only

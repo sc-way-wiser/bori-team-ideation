@@ -85,7 +85,7 @@ const Layout = () => {
             setGraphExpanded(false);
             setSidebarOpen(false);
           }}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-full text-sm font-bold transition-colors ${
             showGraph
               ? "bg-(--color-primary) text-(--color-on-primary)"
               : "bg-(--color-input) text-(--color-text-sec) hover:bg-(--color-hover)"
@@ -123,11 +123,11 @@ const Layout = () => {
                   user.user_metadata.avatar_url ?? user.user_metadata?.picture
                 }
                 alt={user.user_metadata?.full_name ?? "User"}
-                className="w-7 h-7 rounded-full object-cover border border-(--color-border)"
+                className="w-9 h-9 rounded-full object-cover border border-(--color-border)"
                 title={user.email ?? ""}
                 onError={() => (
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
                     style={{
                       backgroundColor: "var(--color-primary)",
                       color: "var(--color-primary-dk)",
@@ -155,7 +155,7 @@ const Layout = () => {
               title="Sign out"
               className="p-1.5 rounded text-(--color-text-muted) hover:text-red-500 hover:bg-red-50 transition-colors"
             >
-              <LogOutIcon size={16} />
+              <LogOutIcon size={24} />
             </button>
           </div>
         ) : (
@@ -320,7 +320,7 @@ const Layout = () => {
                         transition: "opacity 200ms ease",
                         pointerEvents: handleVisible ? "auto" : "none",
                       }}
-                      className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-(--color-text) hover:text-stone-950 hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
+                      className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:text-(--color-text) hover:bg-(--color-hover) shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 border-l-0" : "rounded-l-full -left-3 border-r-0"}`}
                     >
                       {graphExpanded ? (
                         <CaretRightIcon size={12} weight="bold" />

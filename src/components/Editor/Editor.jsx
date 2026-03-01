@@ -46,8 +46,6 @@ import {
   TextAlignRightIcon as AlignRightIcon,
   TextAlignJustifyIcon as AlignJustifyIcon,
   TableIcon as TableIconPH,
-  ColumnsIcon as Columns2Icon,
-  RowsIcon as Rows2Icon,
   MinusIcon,
   PaintBucketIcon,
   TrashIcon as Trash2Icon,
@@ -874,20 +872,6 @@ const ToolbarButton = ({ onClick, title, isActive, children }) => (
   </button>
 );
 
-const TableToolbarButton = ({ onClick, title, danger, children }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className={`flex items-center px-2.5 py-1 rounded text-xs transition-colors ${
-      danger
-        ? "text-red-500 hover:text-red-600 hover:bg-(--color-primary-bg)"
-        : "text-(--color-primary-dk) hover:bg-(--color-primary-bg)"
-    }`}
-  >
-    {children}
-  </button>
-);
-
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Main Editor component                                                    */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -1452,92 +1436,127 @@ const NoteEditor = ({ noteId, onNavigate }) => {
       )}
 
       {/* Grid toolbar — shown when cursor is inside a table */}
-      {isInTable && (
-        <div className="flex flex-wrap items-center gap-0.5 px-3 py-3 border-b border-(--color-border) bg-(--color-background) shrink-0">
-          <span className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider mr-2 shrink-0">
+      <div className="overflow-hidden shrink-0">
+        <div
+          className="flex items-center gap-3 px-4 py-2 border-b border-(--color-border) bg-(--color-background)"
+          style={{
+            transition: "transform 200ms ease-out, opacity 200ms ease-out",
+            transform: isInTable ? "translateY(0)" : "translateY(-100%)",
+            opacity: isInTable ? 1 : 0,
+            pointerEvents: isInTable ? "auto" : "none",
+          }}
+        >
+          {/* Label */}
+          <span className="text-sm text-(--color-text-muted) tracking-widest shrink-0">
             Grid
           </span>
-          <div className="w-px h-4 bg-(--color-border) mr-1 shrink-0" />
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().addColumnBefore().run()}
-            title="Add column left"
-          >
-            <Columns2Icon size={18} />
-            <span className="text-xs ml-1">Col ←</span>
-          </TableToolbarButton>
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().addColumnAfter().run()}
-            title="Add column right"
-          >
-            <Columns2Icon size={18} />
-            <span className="text-xs ml-1">Col →</span>
-          </TableToolbarButton>
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().deleteColumn().run()}
-            title="Delete column"
-            danger
-          >
-            <MinusIcon size={18} />
-            <span className="text-xs ml-1">Del Col</span>
-          </TableToolbarButton>
-          <div className="w-px h-4 bg-(--color-border) mx-0.5 shrink-0" />
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().addRowBefore().run()}
-            title="Add row above"
-          >
-            <Rows2Icon size={18} />
-            <span className="text-xs ml-1">Row ↑</span>
-          </TableToolbarButton>
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().addRowAfter().run()}
-            title="Add row below"
-          >
-            <Rows2Icon size={18} />
-            <span className="text-xs ml-1">Row ↓</span>
-          </TableToolbarButton>
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().deleteRow().run()}
-            title="Delete row"
-            danger
-          >
-            <MinusIcon size={18} />
-            <span className="text-xs ml-1">Del Row</span>
-          </TableToolbarButton>
-          <div className="w-px h-4 bg-(--color-border) mx-0.5 shrink-0" />
-          {/* Border colour buttons */}
-          <span className="text-xs text-(--color-text-muted) mr-1 shrink-0">
-            Border:
-          </span>
-          {BORDER_OPTIONS.map(({ value, label, hex }) => (
-            <button
-              key={value}
-              title={`Table border: ${label}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setTableBorderColor(value);
-              }}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
-                tableBorderColor === value
-                  ? "bg-(--color-primary-bg) text-(--color-primary-dk) ring-1 ring-(--color-primary)"
-                  : "text-(--color-text-sec) hover:bg-(--color-hover)"
-              }`}
-            >
-              <span
-                className="inline-block w-3.5 h-3.5 rounded-sm border"
-                style={{
-                  borderColor: hex === "transparent" ? "currentColor" : hex,
-                  borderWidth: hex === "transparent" ? "1px" : "2px",
-                  borderStyle: hex === "transparent" ? "dashed" : "solid",
-                  opacity: hex === "transparent" ? 0.4 : 1,
-                }}
-              />
-              {label}
-            </button>
-          ))}
-          <div className="w-px h-4 bg-(--color-border) mx-0.5 shrink-0" />
+
+          <div className="w-px h-4 bg-(--color-border) shrink-0" />
+
+          {/* Columns group */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[12px] text-(--color-text-muted) mr-0.5 shrink-0">
+              Col
+            </span>
+            <div className="flex items-center rounded-md border border-(--color-border) overflow-hidden divide-x divide-(--color-border)">
+              <button
+                onClick={() => editor?.chain().focus().addColumnBefore().run()}
+                title="Add column left"
+                className="px-2 py-1 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors"
+              >
+                <span className="text-sm">+←</span>
+              </button>
+              <button
+                onClick={() => editor?.chain().focus().addColumnAfter().run()}
+                title="Add column right"
+                className="px-2 py-1 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors"
+              >
+                <span className="text-sm">+→</span>
+              </button>
+              <button
+                onClick={() => editor?.chain().focus().deleteColumn().run()}
+                title="Delete column"
+                className="text-lg px-2 py-1 text-red-400 hover:bg-(--color-hover) hover:text-red-600 transition-colors"
+              >
+                -
+              </button>
+            </div>
+          </div>
+
+          <div className="w-px h-4 bg-(--color-border) shrink-0" />
+
+          {/* Rows group */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[12px] text-(--color-text-muted) mr-0.5 shrink-0">
+              Row
+            </span>
+            <div className="flex items-center rounded-md border border-(--color-border) overflow-hidden divide-x divide-(--color-border)">
+              <button
+                onClick={() => editor?.chain().focus().addRowBefore().run()}
+                title="Add row above"
+                className="px-2 py-1 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors"
+              >
+                <span className="text-xs">+↑</span>
+              </button>
+              <button
+                onClick={() => editor?.chain().focus().addRowAfter().run()}
+                title="Add row below"
+                className="px-2 py-1 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors"
+              >
+                <span className="text-xs">+↓</span>
+              </button>
+              <button
+                onClick={() => editor?.chain().focus().deleteRow().run()}
+                title="Delete row"
+                className="text-lg px-2 py-1 text-red-400 hover:bg-(--color-hover) hover:text-red-600 transition-colors"
+              >
+                -
+              </button>
+            </div>
+          </div>
+
+          <div className="w-px h-4 bg-(--color-border) shrink-0" />
+
+          {/* Border colour */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[12px] text-(--color-text-muted) shrink-0">
+              Border
+            </span>
+            <div className="flex items-center rounded-md border border-(--color-border) overflow-hidden divide-x divide-(--color-border)">
+              {BORDER_OPTIONS.map(({ value, label, hex }) => (
+                <button
+                  key={value}
+                  title={`Border: ${label}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setTableBorderColor(value);
+                  }}
+                  className={`px-2 py-1 transition-colors ${
+                    tableBorderColor === value
+                      ? "bg-(--color-primary-bg) text-(--color-primary-dk)"
+                      : "text-(--color-text-sec) hover:bg-(--color-hover)"
+                  }`}
+                >
+                  <span
+                    className="inline-block w-3 h-3 rounded-sm border"
+                    style={{
+                      borderColor: hex === "transparent" ? "currentColor" : hex,
+                      borderWidth: hex === "transparent" ? "1px" : "2px",
+                      borderStyle: hex === "transparent" ? "dashed" : "solid",
+                      opacity: hex === "transparent" ? 0.4 : 1,
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-4 bg-(--color-border) shrink-0" />
+
+          {/* Cell color */}
           <ColorPalettePopover
-            label="Cell color"
-            icon={<PaintBucketIcon size={18} />}
+            label="Cell"
+            icon={<PaintBucketIcon size={15} />}
             colors={CELL_COLORS}
             onSelect={(hex) =>
               editor
@@ -1555,7 +1574,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
             }
           />
         </div>
-      )}
+      </div>
 
       {/* ── Floating table delete button — portalled into the active tableWrapper ── */}
       {activeTableWrapper &&
@@ -1568,9 +1587,9 @@ const NoteEditor = ({ noteId, onNavigate }) => {
               setActiveTableWrapper(null);
             }}
             title="Delete table"
-            className="absolute top-1 right-1 z-50 w-7 h-7 flex items-center justify-center rounded-md bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:bg-red-50 hover:border-red-300 hover:text-red-500 shadow-sm transition-colors"
+            className="absolute top-0 right-1 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-(--color-surface) border border-(--color-border) text-(--color-on-primary) hover:bg-red-50 hover:border-red-300 hover:text-red-500 shadow-sm transition-colors"
           >
-            <Trash2Icon size={14} />
+            <Trash2Icon size={18} />
           </button>,
           activeTableWrapper,
         )}
