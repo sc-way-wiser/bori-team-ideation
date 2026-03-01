@@ -98,7 +98,7 @@ async function fetchLinkMeta(href) {
 }
 
 /* ─── LinkCard node view ─────────────────────────────────────────────────── */
-const LinkCardView = ({ node, updateAttributes, deleteNode }) => {
+const LinkCardView = ({ node, updateAttributes, deleteNode, editor }) => {
   const { href, title, favicon } = node.attrs;
   const [loading, setLoading] = useState(!title);
 
@@ -162,16 +162,18 @@ const LinkCardView = ({ node, updateAttributes, deleteNode }) => {
         >
           <path d="M224,104a8,8,0,0,1-16,0V59.32l-82.34,82.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z" />
         </svg>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            deleteNode();
-          }}
-          className="ml-1 opacity-0 group-hover/lc:opacity-60 hover:opacity-100! text-(--color-text-muted) hover:text-(--color-text) transition-opacity cursor-pointer"
-          title="Remove"
-        >
-          <XIcon size={16} weight="bold" />
-        </button>
+        {editor?.isEditable && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteNode();
+            }}
+            className="ml-1 opacity-0 group-hover/lc:opacity-60 hover:opacity-100! text-(--color-text-muted) hover:text-(--color-text) transition-opacity cursor-pointer"
+            title="Remove"
+          >
+            <XIcon size={16} weight="bold" />
+          </button>
+        )}
       </div>
     </NodeViewWrapper>
   );
