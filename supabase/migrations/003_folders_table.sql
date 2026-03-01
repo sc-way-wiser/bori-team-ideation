@@ -11,11 +11,15 @@ CREATE TABLE IF NOT EXISTS ideation_folders (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   owner_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name        TEXT        NOT NULL,
+  parent_id   UUID        REFERENCES ideation_folders(id) ON DELETE CASCADE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ideation_folders_owner ON ideation_folders (owner_id);
+COMMENT ON COLUMN ideation_folders.parent_id IS 'NULL = top-level folder. Non-null = sub-folder of the referenced parent (max depth 1).';
+
+CREATE INDEX IF NOT EXISTS idx_ideation_folders_owner  ON ideation_folders (owner_id);
+CREATE INDEX IF NOT EXISTS idx_ideation_folders_parent ON ideation_folders (parent_id);
 
 -- auto-update updated_at
 CREATE OR REPLACE FUNCTION update_ideation_folders_updated_at()
@@ -47,7 +51,7 @@ CREATE POLICY "folders: collaborators can read"
   USING (
     EXISTS (
       SELECT 1 FROM bori_ideation
-      WHERE bori_ideation.folder_id = ideation_folders.id
+      WHERE bori_ideation.folder_id::UUID = ideation_folders.id
         AND auth.uid() = ANY(bori_ideation.shared_with)
     )
   );

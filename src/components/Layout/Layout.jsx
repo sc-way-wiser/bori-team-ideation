@@ -340,7 +340,7 @@ const Layout = () => {
         <div
           className={`
             fixed inset-y-0 left-0 z-30 w-full transition-transform duration-200
-            md:relative md:flex md:w-75 md:min-w-75 md:translate-x-0 md:z-auto
+            md:relative md:flex md:w-75 md:min-w-80 md:translate-x-0 md:z-auto
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
           `}
         >
@@ -492,7 +492,7 @@ const EmptyState = ({ onCreate }) => (
     </div>
     <button
       onClick={onCreate}
-      className="flex items-center gap-2 px-5 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-text) rounded-lg font-semibold transition-colors shadow-sm"
+      className="flex items-center gap-2 px-5 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-on-primary) rounded-full font-bold transition-colors shadow-sm"
     >
       <PlusIcon size={16} /> Create First Note
     </button>

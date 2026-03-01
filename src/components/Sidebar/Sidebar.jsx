@@ -51,12 +51,21 @@ const MoveToPopover = ({
   }, [onClose]);
 
   const rootLabel = defaultFolderName || "Notes";
-  const allFolders = [{ id: null, name: rootLabel }, ...folders];
+  // Build hierarchical folder list: root → top-level → sub-folders indented
+  const topFolders = folders.filter((f) => !f.parentId);
+  const hierarchical = [{ id: null, name: rootLabel, depth: 0 }];
+  for (const f of topFolders) {
+    hierarchical.push({ id: f.id, name: f.name, depth: 0 });
+    const children = folders.filter((c) => c.parentId === f.id);
+    for (const c of children) {
+      hierarchical.push({ id: c.id, name: c.name, depth: 1 });
+    }
+  }
   const filtered = search.trim()
-    ? allFolders.filter((f) =>
+    ? hierarchical.filter((f) =>
         f.name.toLowerCase().includes(search.trim().toLowerCase()),
       )
-    : allFolders;
+    : hierarchical;
 
   const POP_W = 240;
   return ReactDOM.createPortal(
@@ -100,7 +109,7 @@ const MoveToPopover = ({
       </div>
 
       {/* Folder list */}
-      <div className="overflow-y-auto flex-1">
+      <div className="overflow-y-auto flex-1 scrollbar-hide">
         {filtered.length === 0 ? (
           <p className="text-xs text-(--color-text-muted) text-center py-4">
             No folders found
@@ -119,11 +128,15 @@ const MoveToPopover = ({
                   e.stopPropagation();
                   onMove(e, f.id);
                 }}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors ${
+                className={`w-full flex items-center gap-2 py-2.5 text-sm text-left transition-colors ${
                   isCurrent
                     ? "bg-(--color-primary-bg) text-(--color-primary-dk) font-semibold"
                     : "text-(--color-text) hover:bg-(--color-hover)"
                 }`}
+                style={{
+                  paddingLeft: 12 + (f.depth ?? 0) * 16,
+                  paddingRight: 12,
+                }}
               >
                 <FolderIcon size={14} className="shrink-0" />
                 <span className="flex-1 truncate">{f.name}</span>
@@ -473,10 +486,18 @@ const NoteRow = ({
   const renderFolderList = (search = "") => {
     const q = search.trim().toLowerCase();
     const rootLabel = defaultFolderName || "Notes";
-    const allFolders = [{ id: null, name: rootLabel }, ...folders];
+    const topFolders = folders.filter((f) => !f.parentId);
+    const hierarchical = [{ id: null, name: rootLabel, depth: 0 }];
+    for (const f of topFolders) {
+      hierarchical.push({ id: f.id, name: f.name, depth: 0 });
+      const children = folders.filter((c) => c.parentId === f.id);
+      for (const c of children) {
+        hierarchical.push({ id: c.id, name: c.name, depth: 1 });
+      }
+    }
     const filtered = q
-      ? allFolders.filter((f) => f.name.toLowerCase().includes(q))
-      : allFolders;
+      ? hierarchical.filter((f) => f.name.toLowerCase().includes(q))
+      : hierarchical;
     if (filtered.length === 0)
       return (
         <p className="text-xs text-(--color-text-muted) text-center py-4">
@@ -490,11 +511,12 @@ const NoteRow = ({
         <button
           key={f.id ?? "__root__"}
           onClick={(e) => handleMove(e, f.id)}
-          className={`w-full flex items-center gap-2 px-4 py-3 text-sm transition-colors ${
+          className={`w-full flex items-center gap-2 py-3 text-sm transition-colors ${
             isCurrent
               ? "text-(--color-primary-dk) font-semibold bg-(--color-primary-bg)"
               : "text-(--color-text) hover:bg-(--color-hover)"
           }`}
+          style={{ paddingLeft: 16 + (f.depth ?? 0) * 16, paddingRight: 16 }}
         >
           <FolderIcon size={15} />
           <span className="truncate">{f.name}</span>
@@ -924,9 +946,237 @@ const NoteRow = ({
   );
 };
 
+// ── Folder Share Popover ──────────────────────────────────────────────────────
+const FolderSharePopover = ({ folder, anchorRect, onClose }) => {
+  const {
+    addFolderCollaborator,
+    removeFolderCollaborator,
+    grantFolderEditAccess,
+    revokeFolderEditAccess,
+    requestFolderEditAccess,
+    currentUserId,
+    folders,
+  } = useNoteStore();
+  const [adminUsers, setAdminUsers] = useState([]);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    fetchAdminUsers().then(setAdminUsers);
+  }, []);
+
+  useEffect(() => {
+    const close = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [onClose]);
+
+  // Re-read folder from store each render to get latest sharing arrays
+  const liveFolder = folders.find((f) => f.id === folder.id) ?? folder;
+  const isOwner = liveFolder.ownerId === currentUserId;
+  const others = adminUsers.filter((u) => u.id !== currentUserId);
+
+  const isSharedWith = (userId) =>
+    (liveFolder.sharedWith ?? []).includes(userId);
+  const hasEdit = (userId) => (liveFolder.editAccess ?? []).includes(userId);
+  const hasRequested = (userId) =>
+    (liveFolder.editRequests ?? []).includes(userId);
+
+  // Pending edit requests
+  const pendingUsers = (liveFolder.editRequests ?? [])
+    .map((uid) => adminUsers.find((u) => u.id === uid))
+    .filter(Boolean);
+
+  const POP_W = 320;
+  return ReactDOM.createPortal(
+    <div
+      data-portal
+      ref={popRef}
+      style={{
+        position: "fixed",
+        top: anchorRect.bottom + 4,
+        left: Math.min(anchorRect.left, window.innerWidth - POP_W - 8),
+        zIndex: 9999,
+        width: POP_W,
+        maxHeight: 380,
+      }}
+      className="bg-(--color-surface) border border-(--color-border) rounded-xl shadow-xl overflow-y-auto py-1"
+    >
+      {/* Pending edit requests */}
+      {isOwner && pendingUsers.length > 0 && (
+        <>
+          <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider px-3 pt-2 pb-1 flex items-center gap-1.5">
+            <EditIcon size={12} />
+            Edit requests
+          </p>
+          {pendingUsers.map((user) => {
+            const initials = (user.full_name ||
+              user.email ||
+              "U")[0].toUpperCase();
+            return (
+              <div
+                key={user.id}
+                className="flex items-center gap-2.5 px-3 py-2 bg-amber-50"
+              >
+                {user.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    className="w-6 h-6 rounded-full object-cover shrink-0"
+                    alt=""
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-amber-200 text-amber-900">
+                    {initials}
+                  </div>
+                )}
+                <span className="flex-1 text-xs font-medium text-(--color-text) truncate">
+                  {user.full_name || user.email}
+                </span>
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    grantFolderEditAccess(folder.id, user.id);
+                  }}
+                  className="text-xs px-2 py-0.5 rounded-full bg-amber-400 text-amber-900 font-semibold hover:bg-amber-500 transition-colors shrink-0"
+                >
+                  Approve
+                </button>
+              </div>
+            );
+          })}
+          <div className="border-t border-(--color-border-lt)" />
+        </>
+      )}
+
+      <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider px-3 pt-2 pb-1">
+        {isOwner ? "Share folder with" : "Folder sharing"}
+      </p>
+      <div className="border-t border-(--color-border-lt)" />
+
+      {others.length === 0 ? (
+        <p className="text-xs text-(--color-text-muted) px-3 py-3">
+          No admin users found
+        </p>
+      ) : (
+        others.map((user) => {
+          const shared = isSharedWith(user.id);
+          const editGranted = hasEdit(user.id);
+          const initials = (user.full_name ||
+            user.email ||
+            "U")[0].toUpperCase();
+
+          if (!isOwner) {
+            // Non-owner view: show request edit UI
+            const requested = hasRequested(currentUserId);
+            const canEdit = hasEdit(currentUserId);
+            return (
+              <div
+                key={user.id}
+                className="flex items-center gap-2.5 px-3 py-2 text-xs text-(--color-text-muted)"
+              >
+                <span className="flex-1 truncate">
+                  {canEdit
+                    ? "You can edit this folder"
+                    : requested
+                      ? "Edit request sent"
+                      : ""}
+                </span>
+                {!canEdit && !requested && (
+                  <button
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      requestFolderEditAccess(folder.id, currentUserId);
+                    }}
+                    className="text-xs px-2 py-0.5 rounded-full border border-(--color-border) text-(--color-text-muted) hover:border-(--color-primary-dk) hover:text-(--color-primary-dk) transition-colors"
+                  >
+                    Request edit
+                  </button>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={user.id}
+              className="flex items-center gap-2.5 px-3 py-2 hover:bg-(--color-hover) transition-colors"
+            >
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (shared) removeFolderCollaborator(folder.id, user.id);
+                  else addFolderCollaborator(folder.id, user.id);
+                }}
+                className="flex items-center gap-2.5 flex-1 min-w-0 overflow-hidden text-left"
+              >
+                {user.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    className="w-6 h-6 rounded-full object-cover shrink-0"
+                    alt=""
+                  />
+                ) : (
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{
+                      backgroundColor: "var(--color-primary)",
+                      color: "var(--color-primary-dk)",
+                    }}
+                  >
+                    {initials}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-(--color-text) truncate">
+                    {user.full_name || user.email}
+                  </div>
+                  {user.full_name && (
+                    <div className="text-xs text-(--color-text-muted) truncate">
+                      {user.email}
+                    </div>
+                  )}
+                </div>
+                {shared && !editGranted && (
+                  <CheckIcon
+                    size={12}
+                    className="text-(--color-primary-dk) shrink-0"
+                  />
+                )}
+              </button>
+              {shared && (
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    if (editGranted) revokeFolderEditAccess(folder.id, user.id);
+                    else grantFolderEditAccess(folder.id, user.id);
+                  }}
+                  title={
+                    editGranted ? "Revoke edit access" : "Grant edit access"
+                  }
+                  className={`shrink-0 flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                    editGranted
+                      ? "bg-(--color-primary) border-(--color-primary-dk) text-(--color-primary-dk) font-semibold"
+                      : "border-(--color-border) text-(--color-text-muted) hover:border-(--color-primary-dk) hover:text-(--color-primary-dk)"
+                  }`}
+                >
+                  <EditIcon size={10} />
+                  {editGranted ? "Can edit" : "Read-only"}
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>,
+    document.body,
+  );
+};
+
 // ── Folder section ────────────────────────────────────────────────────────────
 const FolderSection = ({
   folderId,
+  folder,
   folderName,
   notes,
   activeNoteId,
@@ -941,14 +1191,40 @@ const FolderSection = ({
   onAddNote,
   onRename,
   onDelete,
+  onAddSubFolder,
   selectedNoteIds,
   onToggleSelect,
   readonly = false,
+  isSubFolder = false,
+  children,
 }) => {
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(folderName);
+  const [folderShareOpen, setFolderShareOpen] = useState(false);
+  const [folderShareAnchorRect, setFolderShareAnchorRect] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const folderShareRef = useRef(null);
+  const menuRef = useRef(null);
+  const menuBtnRef = useRef(null);
   const longPressTimeout = useRef(null);
+
+  // Close ⋯ menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target) &&
+        menuBtnRef.current &&
+        !menuBtnRef.current.contains(e.target)
+      ) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   const startEditing = () => {
     setNameVal(folderName);
@@ -997,7 +1273,7 @@ const FolderSection = ({
 
   return (
     <div
-      className={`rounded-md transition-colors mb-1 ${!readonly && isDragOver ? "ring-2 ring-(--color-primary) bg-(--color-primary-bg)" : ""}`}
+      className={`rounded-md transition-colors ${isSubFolder ? "" : "mb-1"} ${!readonly && isDragOver ? "ring-2 ring-(--color-primary) bg-(--color-primary-bg)" : ""}`}
       onDragOver={!readonly ? onDragOver : undefined}
       onDragLeave={!readonly ? onDragLeave : undefined}
       onDrop={!readonly ? onDrop : undefined}
@@ -1054,100 +1330,201 @@ const FolderSection = ({
         </div>
 
         {!editing && !readonly && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover/fh:opacity-100 transition-opacity">
-            <button
-              onClick={startEditing}
-              title="Rename folder"
-              className="p-0.5 rounded text-(--color-text-muted) hover:text-(--color-text) hover:bg-(--color-hover) transition-colors"
-            >
-              <PencilIcon size={15} />
-            </button>
-            {folderId !== null && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* ⋯ menu — on hover, collapses rename / share / add-subfolder / delete */}
+            {(onRename ||
+              onDelete ||
+              onAddSubFolder ||
+              (folder && folderId !== null)) && (
+              <div className="relative opacity-0 group-hover/fh:opacity-100 transition-opacity">
+                <button
+                  ref={menuBtnRef}
+                  onClick={() => setMenuOpen((v) => !v)}
+                  title="Folder options"
+                  className="p-0.5 rounded text-(--color-text-muted) hover:text-(--color-text) hover:bg-(--color-hover) transition-colors"
+                >
+                  <DotsThreeIcon size={20} weight="bold" />
+                </button>
+
+                {menuOpen && (
+                  <div
+                    ref={menuRef}
+                    className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-(--color-surface) border border-(--color-border) rounded-lg shadow-lg py-1 text-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {onRename && (
+                      <button
+                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-(--color-hover) text-(--color-text) transition-colors"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          startEditing();
+                        }}
+                      >
+                        <PencilIcon size={14} />
+                        Rename
+                      </button>
+                    )}
+                    {onAddSubFolder && (
+                      <button
+                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-(--color-hover) text-(--color-text) transition-colors"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onAddSubFolder();
+                        }}
+                      >
+                        <FolderPlusIcon size={14} />
+                        Add sub-folder
+                      </button>
+                    )}
+                    {folder && folderId !== null && (
+                      <button
+                        ref={folderShareRef}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-(--color-hover) text-(--color-text) transition-colors"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          const rect =
+                            folderShareRef.current?.getBoundingClientRect();
+                          setFolderShareAnchorRect(rect ?? null);
+                          setFolderShareOpen((v) => !v);
+                        }}
+                      >
+                        <UserPlusIcon size={14} />
+                        Share
+                        {(folder.sharedWith ?? []).length > 0 && (
+                          <UsersIcon
+                            size={12}
+                            className="ml-auto text-(--color-primary-dk)"
+                          />
+                        )}
+                      </button>
+                    )}
+                    {onDelete && (
+                      <>
+                        <div className="mx-2 my-1 h-px bg-(--color-border)" />
+                        <button
+                          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 text-red-500 transition-colors"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            onDelete();
+                          }}
+                        >
+                          <Trash2Icon size={14} />
+                          Delete folder
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Folder share popover */}
+            {folderShareOpen && folderShareAnchorRect && folder && (
+              <FolderSharePopover
+                folder={folder}
+                anchorRect={folderShareAnchorRect}
+                onClose={() => {
+                  setFolderShareOpen(false);
+                  setFolderShareAnchorRect(null);
+                }}
+              />
+            )}
+
+            {/* Shared indicator badge — always visible when folder is shared */}
+            {folder && (folder.sharedWith ?? []).length > 0 && !menuOpen && (
+              <span className="shrink-0 text-(--color-primary-dk)/70 p-0.5">
+                <UsersIcon size={13} />
+              </span>
+            )}
+
+            {/* Add note — always visible, most common action */}
+            {onAddNote && (
               <button
-                onClick={onDelete}
-                title="Delete folder"
-                className="p-0.5 rounded text-(--color-text-muted) hover:text-red-500 hover:bg-red-50 transition-colors"
+                onClick={onAddNote}
+                title={folderId ? "New note in folder" : "New note"}
+                className="p-0.5 rounded text-(--color-text-muted) hover:text-(--color-primary-dk) hover:bg-(--color-hover) transition-colors"
               >
-                <Trash2Icon size={15} />
+                <PlusIcon size={20} />
               </button>
             )}
           </div>
         )}
-
-        {onAddNote && (
-          <button
-            onClick={onAddNote}
-            title={folderId ? "New note in folder" : "New note"}
-            className="p-0.5 rounded text-(--color-text-muted) hover:text-(--color-primary-dk) hover:bg-(--color-hover) transition-colors shrink-0"
-          >
-            <PlusIcon size={15} />
-          </button>
-        )}
       </div>
 
       {open && (
-        <ul className="px-2 pb-1 overflow-y-auto max-h-115 md:max-h-192">
-          {notes.length === 0 ? (
+        <ul className="px-2 pb-1 overflow-y-auto max-h-115 md:max-h-192 scrollbar-hide">
+          {notes.length === 0 && !children ? (
             <li className="text-xs text-(--color-text-muted) px-2 py-1.5 italic">
               {isDragOver ? "Drop here…" : "No notes"}
             </li>
           ) : (
             <>
-              {/* Per-folder select all */}
-              <li className="flex items-center gap-2 px-1.5 py-2 border-b border-(--color-border) mb-0.5">
-                <button
-                  onClick={toggleFolderSelect}
-                  aria-label={`Select all in ${folderName}`}
-                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                    isAllSelected || isPartialSelected
-                      ? "bg-(--color-primary-dk) border-(--color-primary-dk)"
-                      : "border-(--color-border) hover:border-(--color-primary-dk)"
-                  }`}
-                >
-                  {isAllSelected && (
-                    <CheckIcon
-                      size={10}
-                      color="text-(--color-on-primary)"
-                      weight="bold"
-                    />
-                  )}
-                  {isPartialSelected && !isAllSelected && (
-                    <span
-                      style={{
-                        width: 8,
-                        height: 2,
-                        borderRadius: 1,
-                        backgroundColor: "var(--color-on-primary)",
-                        display: "block",
-                      }}
-                    />
-                  )}
-                </button>
-                <button
-                  onClick={toggleFolderSelect}
-                  className="text-xs text-(--color-text-muted) hover:text-(--color-text) transition-colors"
-                >
-                  {isAllSelected ? "Deselect all" : "Select all"}
-                </button>
-              </li>
-              {notes.map((note) => (
-                <NoteRow
-                  key={note.id}
-                  note={note}
-                  isActive={activeNoteId === note.id}
-                  isLinked={!!linkedNoteIdSet?.has(note.id)}
-                  onSelect={() => onNoteSelect(note.id)}
-                  onShare={() => onNoteShare?.(note.id)}
-                  onDragStart={(e) => onDragStartNote(e, note.id)}
-                  isSelected={selectedNoteIds?.has(note.id)}
-                  onToggleSelect={onToggleSelect}
-                />
-              ))}
-              {isDragOver && (
-                <li className="text-xs text-(--color-primary-dk) px-2 py-1">
-                  <CheckIcon size={10} className="inline mr-1" />
-                  Drop to move here
+              {/* Sub-folders rendered above notes */}
+              {children && (
+                <li className="ml-3 border-l-2 border-(--color-border) pl-1 mb-1">
+                  {children}
                 </li>
+              )}
+
+              {notes.length > 0 && (
+                <>
+                  {/* Per-folder select all */}
+                  <li className="flex items-center gap-2 px-1.5 py-2 border-b border-(--color-border) mb-0.5">
+                    <button
+                      onClick={toggleFolderSelect}
+                      aria-label={`Select all in ${folderName}`}
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                        isAllSelected || isPartialSelected
+                          ? "bg-(--color-primary-dk) border-(--color-primary-dk)"
+                          : "border-(--color-border) hover:border-(--color-primary-dk)"
+                      }`}
+                    >
+                      {isAllSelected && (
+                        <CheckIcon
+                          size={10}
+                          color="text-(--color-on-primary)"
+                          weight="bold"
+                        />
+                      )}
+                      {isPartialSelected && !isAllSelected && (
+                        <span
+                          style={{
+                            width: 8,
+                            height: 2,
+                            borderRadius: 1,
+                            backgroundColor: "var(--color-on-primary)",
+                            display: "block",
+                          }}
+                        />
+                      )}
+                    </button>
+                    <button
+                      onClick={toggleFolderSelect}
+                      className="text-xs text-(--color-text-muted) hover:text-(--color-text) transition-colors"
+                    >
+                      {isAllSelected ? "Deselect all" : "Select all"}
+                    </button>
+                  </li>
+                  {notes.map((note) => (
+                    <NoteRow
+                      key={note.id}
+                      note={note}
+                      isActive={activeNoteId === note.id}
+                      isLinked={!!linkedNoteIdSet?.has(note.id)}
+                      onSelect={() => onNoteSelect(note.id)}
+                      onShare={() => onNoteShare?.(note.id)}
+                      onDragStart={(e) => onDragStartNote(e, note.id)}
+                      isSelected={selectedNoteIds?.has(note.id)}
+                      onToggleSelect={onToggleSelect}
+                    />
+                  ))}
+                  {isDragOver && (
+                    <li className="text-xs text-(--color-primary-dk) px-2 py-1">
+                      <CheckIcon size={10} className="inline mr-1" />
+                      Drop to move here
+                    </li>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1234,17 +1611,6 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
     return names;
   }, [notes, currentUserId]);
 
-  // User B's own folder IDs whose name clashes with a "Shared with me" folder.
-  // These folders are hidden from the regular section and their notes are merged
-  // into the shared section instead — so the same name never appears twice.
-  const clashingFolderIds = useMemo(() => {
-    const ids = new Set();
-    for (const f of folders) {
-      if (sharedFolderNames.has(f.name)) ids.add(f.id);
-    }
-    return ids;
-  }, [folders, sharedFolderNames]);
-
   const isAccessible = (note) => {
     if (!note.ownerId) return false;
     if (note.ownerId === currentUserId) return true;
@@ -1270,12 +1636,14 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
 
   const handleDragOver = (e, folderId) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
     setDragOverFolder(folderId);
   };
 
   const handleDrop = (e, folderId) => {
     e.preventDefault();
+    e.stopPropagation();
     const noteId =
       draggingNoteId.current ?? e.dataTransfer.getData("text/plain");
     if (noteId) moveNoteToFolder(noteId, folderId);
@@ -1338,7 +1706,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
       </div>
 
       {/* Notes tree */}
-      <div className="flex-1 overflow-y-auto px-2 py-2">
+      <div className="flex-1 overflow-y-auto px-2 py-2 scrollbar-hide">
         {isSearching ? (
           <>
             <div className="px-1 pb-1 flex items-center justify-between">
@@ -1383,72 +1751,220 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
         ) : (
           <>
             {folders
-              // Never show a folder in the regular section if its name matches
-              // a "Shared with me" folder — regardless of whether it has notes.
-              // Notes inside clashing folders are shown under "Shared with me".
-              .filter((folder) => !clashingFolderIds.has(folder.id))
-              .map((folder) => (
+              // Only show top-level own folders, excluding the default folder
+              // (it is rendered separately below as the default section)
+              .filter(
+                (folder) =>
+                  !folder.parentId &&
+                  (folder.ownerId === currentUserId || !folder.ownerId) &&
+                  folder.name !== defaultFolderName,
+              )
+              .map((folder) => {
+                const subFolders = folders.filter(
+                  (f) => f.parentId === folder.id,
+                );
+                return (
+                  <FolderSection
+                    key={folder.id}
+                    folderId={folder.id}
+                    folder={folder}
+                    folderName={folder.name}
+                    notes={notes.filter(
+                      (n) =>
+                        n.folderId === folder.id && n.ownerId === currentUserId,
+                    )}
+                    activeNoteId={activeNoteId}
+                    isDragOver={dragOverFolder === folder.id}
+                    onNoteSelect={handleNoteSelect}
+                    onNoteShare={(id) => {
+                      requestShareFor(id);
+                      onNoteSelect(id);
+                    }}
+                    onDragStartNote={handleDragStart}
+                    onDragOver={(e) => handleDragOver(e, folder.id)}
+                    onDragLeave={() => setDragOverFolder(null)}
+                    onDrop={(e) => handleDrop(e, folder.id)}
+                    onAddNote={() => {
+                      const id = createNote(folder.id);
+                      onNoteSelect(id);
+                    }}
+                    onRename={(name) => renameFolder(folder.id, name)}
+                    onDelete={() => deleteFolder(folder.id)}
+                    onAddSubFolder={() =>
+                      createFolder("New Sub-folder", folder.id)
+                    }
+                    selectedNoteIds={selectedNoteIds}
+                    onToggleSelect={toggleNoteSelect}
+                    linkedNoteIdSet={linkedNoteIdSet}
+                  >
+                    {subFolders.length > 0 &&
+                      subFolders.map((sub) => (
+                        <FolderSection
+                          key={sub.id}
+                          folderId={sub.id}
+                          folder={sub}
+                          folderName={sub.name}
+                          notes={notes.filter(
+                            (n) =>
+                              n.folderId === sub.id &&
+                              n.ownerId === currentUserId,
+                          )}
+                          activeNoteId={activeNoteId}
+                          isDragOver={dragOverFolder === sub.id}
+                          onNoteSelect={handleNoteSelect}
+                          onNoteShare={(id) => {
+                            requestShareFor(id);
+                            onNoteSelect(id);
+                          }}
+                          onDragStartNote={handleDragStart}
+                          onDragOver={(e) => handleDragOver(e, sub.id)}
+                          onDragLeave={() => setDragOverFolder(null)}
+                          onDrop={(e) => handleDrop(e, sub.id)}
+                          onAddNote={() => {
+                            const id = createNote(sub.id);
+                            onNoteSelect(id);
+                          }}
+                          onRename={(name) => renameFolder(sub.id, name)}
+                          onDelete={() => deleteFolder(sub.id)}
+                          selectedNoteIds={selectedNoteIds}
+                          onToggleSelect={toggleNoteSelect}
+                          linkedNoteIdSet={linkedNoteIdSet}
+                          isSubFolder
+                        />
+                      ))}
+                  </FolderSection>
+                );
+              })}
+
+            {(() => {
+              // Find the backing ideation_folders row for the default folder.
+              // loadNotes guarantees it exists after first load.
+              const defaultRealFolder =
+                folders.find(
+                  (f) =>
+                    !f.parentId &&
+                    f.ownerId === currentUserId &&
+                    f.name === defaultFolderName,
+                ) ?? null;
+
+              const ownFolderCount = folders.filter(
+                (f) =>
+                  !f.parentId && (f.ownerId === currentUserId || !f.ownerId),
+              ).length;
+              const defaultNotes = notes.filter(
+                (n) =>
+                  (n.folderId == null ||
+                    (defaultRealFolder &&
+                      n.folderId === defaultRealFolder.id)) &&
+                  n.ownerId === currentUserId &&
+                  !(n.folderName && sharedFolderNames.has(n.folderName)),
+              );
+
+              // Empty state — no folders and no unfiled notes
+              if (ownFolderCount === 0 && defaultNotes.length === 0) {
+                return (
+                  <div className="px-3 py-6 text-center">
+                    <p className="text-xs text-(--color-text-muted) italic">
+                      No notes yet
+                    </p>
+                    <button
+                      onClick={() => {
+                        const id = createNote(null);
+                        onNoteSelect(id);
+                      }}
+                      className="mt-2 text-xs text-(--color-primary-dk) hover:underline"
+                    >
+                      Create your first note
+                    </button>
+                  </div>
+                );
+              }
+
+              const defaultSubFolders = defaultRealFolder
+                ? folders.filter((f) => f.parentId === defaultRealFolder.id)
+                : [];
+              return (
                 <FolderSection
-                  key={folder.id}
-                  folderId={folder.id}
-                  folderName={folder.name}
-                  notes={notes.filter(
-                    (n) =>
-                      n.folderId === folder.id && n.ownerId === currentUserId,
-                  )}
+                  folderId={defaultRealFolder?.id ?? null}
+                  folder={defaultRealFolder}
+                  folderName={defaultFolderName}
+                  notes={defaultNotes}
                   activeNoteId={activeNoteId}
-                  isDragOver={dragOverFolder === folder.id}
+                  isDragOver={
+                    dragOverFolder === (defaultRealFolder?.id ?? "root")
+                  }
                   onNoteSelect={handleNoteSelect}
                   onNoteShare={(id) => {
                     requestShareFor(id);
                     onNoteSelect(id);
                   }}
                   onDragStartNote={handleDragStart}
-                  onDragOver={(e) => handleDragOver(e, folder.id)}
+                  onDragOver={(e) =>
+                    handleDragOver(e, defaultRealFolder?.id ?? "root")
+                  }
                   onDragLeave={() => setDragOverFolder(null)}
-                  onDrop={(e) => handleDrop(e, folder.id)}
+                  onDrop={(e) => handleDrop(e, null)}
                   onAddNote={() => {
-                    const id = createNote(folder.id);
+                    const id = createNote(null);
                     onNoteSelect(id);
                   }}
-                  onRename={(name) => renameFolder(folder.id, name)}
-                  onDelete={() => deleteFolder(folder.id)}
+                  onRename={(name) => renameDefaultFolder(name)}
+                  onDelete={
+                    defaultRealFolder
+                      ? () => {
+                          deleteFolder(defaultRealFolder.id);
+                          renameDefaultFolder("Notes");
+                        }
+                      : undefined
+                  }
+                  onAddSubFolder={() => {
+                    if (defaultRealFolder) {
+                      createFolder("New Sub-folder", defaultRealFolder.id);
+                    } else {
+                      const parentId = createFolder(defaultFolderName);
+                      createFolder("New Sub-folder", parentId);
+                    }
+                  }}
                   selectedNoteIds={selectedNoteIds}
                   onToggleSelect={toggleNoteSelect}
                   linkedNoteIdSet={linkedNoteIdSet}
-                />
-              ))}
-
-            <FolderSection
-              folderId={null}
-              folderName={defaultFolderName}
-              notes={notes.filter(
-                (n) =>
-                  n.folderId == null &&
-                  n.ownerId === currentUserId &&
-                  // Exclude notes that belong to a shared folder
-                  !(n.folderName && sharedFolderNames.has(n.folderName)),
-              )}
-              activeNoteId={activeNoteId}
-              isDragOver={dragOverFolder === "root"}
-              onNoteSelect={handleNoteSelect}
-              onNoteShare={(id) => {
-                requestShareFor(id);
-                onNoteSelect(id);
-              }}
-              onDragStartNote={handleDragStart}
-              onDragOver={(e) => handleDragOver(e, "root")}
-              onDragLeave={() => setDragOverFolder(null)}
-              onDrop={(e) => handleDrop(e, null)}
-              onAddNote={() => {
-                const id = createNote(null);
-                onNoteSelect(id);
-              }}
-              onRename={(name) => renameDefaultFolder(name)}
-              selectedNoteIds={selectedNoteIds}
-              onToggleSelect={toggleNoteSelect}
-              linkedNoteIdSet={linkedNoteIdSet}
-            />
+                >
+                  {defaultSubFolders.map((sub) => (
+                    <FolderSection
+                      key={sub.id}
+                      folderId={sub.id}
+                      folder={sub}
+                      folderName={sub.name}
+                      notes={notes.filter(
+                        (n) =>
+                          n.folderId === sub.id && n.ownerId === currentUserId,
+                      )}
+                      activeNoteId={activeNoteId}
+                      isDragOver={dragOverFolder === sub.id}
+                      onNoteSelect={handleNoteSelect}
+                      onNoteShare={(id) => {
+                        requestShareFor(id);
+                        onNoteSelect(id);
+                      }}
+                      onDragStartNote={handleDragStart}
+                      onDragOver={(e) => handleDragOver(e, sub.id)}
+                      onDragLeave={() => setDragOverFolder(null)}
+                      onDrop={(e) => handleDrop(e, sub.id)}
+                      onAddNote={() => {
+                        const id = createNote(sub.id);
+                        onNoteSelect(id);
+                      }}
+                      onRename={(name) => renameFolder(sub.id, name)}
+                      onDelete={() => deleteFolder(sub.id)}
+                      selectedNoteIds={selectedNoteIds}
+                      onToggleSelect={toggleNoteSelect}
+                      linkedNoteIdSet={linkedNoteIdSet}
+                      isSubFolder
+                    />
+                  ))}
+                </FolderSection>
+              );
+            })()}
 
             {/* ── Shared with me ── */}
             {(() => {
@@ -1467,36 +1983,31 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
                 groups[key].push(note);
               }
 
-              // Include User B's own notes that sit in a shared folder —
-              // either notes filed under a clashing folder id (User B had a
-              // same-named folder), or notes filed by name with no folderId.
-              const groupNames = new Set(
-                Object.keys(groups).filter((k) => k !== "__root__"),
-              );
-              const myNotesInSharedFolders = notes.filter(
-                (n) =>
-                  n.ownerId === currentUserId &&
-                  n.folderName &&
-                  groupNames.has(n.folderName) &&
-                  // folderId is null (filed by name only) OR points to one of
-                  // User B's clashing folders that we hid from the regular list
-                  (!n.folderId || clashingFolderIds.has(n.folderId)),
-              );
-              for (const note of myNotesInSharedFolders) {
-                const key = note.folderName;
-                if (!groups[key]) groups[key] = [];
-                // Avoid duplicates
-                if (!groups[key].some((n) => n.id === note.id)) {
-                  groups[key].push(note);
-                }
-              }
-
               const groupList = Object.entries(groups).map(
-                ([key, grpNotes]) => ({
-                  key,
-                  name: key === "__root__" ? "Notes" : key,
-                  notes: grpNotes,
-                }),
+                ([key, grpNotes]) => {
+                  // Try to find the real ideation_folders row for this shared group.
+                  // 1. Use folderId from any note in the group.
+                  const sampleFolderId = grpNotes.find(
+                    (n) => n.folderId,
+                  )?.folderId;
+                  let realFolder = sampleFolderId
+                    ? folders.find((f) => f.id === sampleFolderId)
+                    : null;
+                  // 2. Fallback: match by folder name (e.g. pre-migration notes
+                  //    that only carry folderName, not folderId).
+                  if (!realFolder && key !== "__root__") {
+                    realFolder =
+                      folders.find(
+                        (f) => f.name === key && f.ownerId !== currentUserId,
+                      ) ?? null;
+                  }
+                  return {
+                    key,
+                    name: key === "__root__" ? "Notes" : key,
+                    notes: grpNotes,
+                    realFolder,
+                  };
+                },
               );
 
               return (
@@ -1510,30 +2021,99 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
                       Shared with me
                     </span>
                   </div>
-                  {groupList.map((group) => (
-                    <FolderSection
-                      key={group.key}
-                      folderId={group.key}
-                      folderName={group.name}
-                      notes={group.notes}
-                      activeNoteId={activeNoteId}
-                      isDragOver={false}
-                      onNoteSelect={handleNoteSelect}
-                      onNoteShare={(id) => {
-                        requestShareFor(id);
-                        onNoteSelect(id);
-                      }}
-                      onDragStartNote={handleDragStart}
-                      selectedNoteIds={selectedNoteIds}
-                      onToggleSelect={toggleNoteSelect}
-                      linkedNoteIdSet={linkedNoteIdSet}
-                      readonly
-                      onAddNote={() => {
-                        const id = createNote(null, { folderName: group.name });
-                        onNoteSelect(id);
-                      }}
-                    />
-                  ))}
+                  {groupList.map((group) => {
+                    const subFolders = group.realFolder
+                      ? folders.filter(
+                          (f) => f.parentId === group.realFolder.id,
+                        )
+                      : [];
+                    return (
+                      <FolderSection
+                        key={group.key}
+                        folderId={group.realFolder?.id ?? group.key}
+                        folder={group.realFolder ?? null}
+                        folderName={group.name}
+                        notes={group.notes}
+                        activeNoteId={activeNoteId}
+                        isDragOver={
+                          dragOverFolder === (group.realFolder?.id ?? group.key)
+                        }
+                        onNoteSelect={handleNoteSelect}
+                        onNoteShare={(id) => {
+                          requestShareFor(id);
+                          onNoteSelect(id);
+                        }}
+                        onDragStartNote={handleDragStart}
+                        onDragOver={
+                          group.realFolder
+                            ? (e) => handleDragOver(e, group.realFolder.id)
+                            : undefined
+                        }
+                        onDragLeave={
+                          group.realFolder
+                            ? () => setDragOverFolder(null)
+                            : undefined
+                        }
+                        onDrop={
+                          group.realFolder
+                            ? (e) => handleDrop(e, group.realFolder.id)
+                            : undefined
+                        }
+                        selectedNoteIds={selectedNoteIds}
+                        onToggleSelect={toggleNoteSelect}
+                        linkedNoteIdSet={linkedNoteIdSet}
+                        readonly={!group.realFolder}
+                        onAddSubFolder={() => {
+                          if (group.realFolder) {
+                            createFolder("New Sub-folder", group.realFolder.id);
+                          } else {
+                            // No real folder row — create an owned parent
+                            // folder with the same name, then a sub-folder.
+                            const parentId = createFolder(group.name);
+                            createFolder("New Sub-folder", parentId);
+                          }
+                        }}
+                        onAddNote={() => {
+                          const id = group.realFolder
+                            ? createNote(group.realFolder.id)
+                            : createNote(null, { folderName: group.name });
+                          onNoteSelect(id);
+                        }}
+                      >
+                        {subFolders.length > 0 &&
+                          subFolders.map((sub) => (
+                            <FolderSection
+                              key={sub.id}
+                              folderId={sub.id}
+                              folder={sub}
+                              folderName={sub.name}
+                              notes={notes.filter((n) => n.folderId === sub.id)}
+                              activeNoteId={activeNoteId}
+                              isDragOver={dragOverFolder === sub.id}
+                              onNoteSelect={handleNoteSelect}
+                              onNoteShare={(id) => {
+                                requestShareFor(id);
+                                onNoteSelect(id);
+                              }}
+                              onDragStartNote={handleDragStart}
+                              onDragOver={(e) => handleDragOver(e, sub.id)}
+                              onDragLeave={() => setDragOverFolder(null)}
+                              onDrop={(e) => handleDrop(e, sub.id)}
+                              onAddNote={() => {
+                                const id = createNote(sub.id);
+                                onNoteSelect(id);
+                              }}
+                              onRename={(name) => renameFolder(sub.id, name)}
+                              onDelete={() => deleteFolder(sub.id)}
+                              selectedNoteIds={selectedNoteIds}
+                              onToggleSelect={toggleNoteSelect}
+                              linkedNoteIdSet={linkedNoteIdSet}
+                              isSubFolder
+                            />
+                          ))}
+                      </FolderSection>
+                    );
+                  })}
                 </>
               );
             })()}

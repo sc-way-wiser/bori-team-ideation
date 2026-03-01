@@ -216,8 +216,15 @@ function cosineSim(vecA, vecB) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
-  const { notes, getAllTags, activeNoteId, currentUserId, thinkingNoteIds } =
-    useNoteStore();
+  const {
+    notes,
+    folders,
+    defaultFolderName,
+    getAllTags,
+    activeNoteId,
+    currentUserId,
+    thinkingNoteIds,
+  } = useNoteStore();
   const { isMobile } = useBrowser();
   const allTags = getAllTags();
   const [tagFilter, setTagFilter] = useState("");
@@ -244,25 +251,43 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
   const graphBg = isEvening ? "#1c1917" : "#ffffff";
 
   // Stable folder scope — only changes when active note moves to a different folder.
-  // Switching notes within the same folder must NOT update this, so graphData stays
-  // stable and node positions are preserved.
+  // Helper: walk up to the top-level ancestor folder ID
+  const rootFolderIdFor = useCallback(
+    (folderId) => {
+      if (!folderId) return null;
+      let cur = folders.find((f) => f.id === folderId);
+      while (cur?.parentId) {
+        const parent = folders.find((f) => f.id === cur.parentId);
+        if (!parent) break;
+        cur = parent;
+      }
+      return cur?.id ?? folderId;
+    },
+    [folders],
+  );
+
+  // Stable folder scope — stored as the ROOT ancestor ID so that clicking
+  // a note in a sub-folder keeps the same scope as its parent folder.
+  // This preserves node positions when switching notes within the same tree.
   const [graphScope, setGraphScope] = useState(() => {
     const activeNote = notes.find((n) => n.id === activeNoteId);
+    const rawFolderId = activeNote?.folderId ?? null;
     return {
-      folderId: activeNote?.folderId ?? null,
+      folderId: rootFolderIdFor(rawFolderId),
       ownerId: activeNote?.ownerId ?? null,
     };
   });
 
   useEffect(() => {
     const activeNote = notes.find((n) => n.id === activeNoteId);
-    const folderId = activeNote?.folderId ?? null;
+    const rawFolderId = activeNote?.folderId ?? null;
+    const rootId = rootFolderIdFor(rawFolderId);
     const ownerId = activeNote?.ownerId ?? null;
     setGraphScope((prev) => {
-      if (prev.folderId === folderId && prev.ownerId === ownerId) return prev;
-      return { folderId, ownerId };
+      if (prev.folderId === rootId && prev.ownerId === ownerId) return prev;
+      return { folderId: rootId, ownerId };
     });
-  }, [notes, activeNoteId]);
+  }, [notes, activeNoteId, rootFolderIdFor]);
 
   // Same visibility rule as Sidebar
   const isAccessible = (note) => {
@@ -293,13 +318,59 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
   const graphData = useMemo(() => {
     const accessible = notes.filter(isAccessible);
 
-    // Scope to the folder of the active note (null = root/unfiled).
-    // Uses graphScope which only changes on folder transitions — not on every
-    // note selection — so node positions are preserved within a folder.
-    const { folderId: activeFolderId, ownerId: activeOwnerId } = graphScope;
+    // graphScope.folderId is already the root ancestor ID (resolved in useEffect).
+    // Just collect all descendants from that root.
+    const { folderId: rootFolderId, ownerId: activeOwnerId } = graphScope;
+
+    // Collect root + all descendants recursively
+    const folderIdSet = new Set();
+    folderIdSet.add(rootFolderId); // null = unfiled/default
+    if (rootFolderId) {
+      const queue = [rootFolderId];
+      while (queue.length) {
+        const pid = queue.shift();
+        for (const f of folders) {
+          if (f.parentId === pid) {
+            folderIdSet.add(f.id);
+            queue.push(f.id);
+          }
+        }
+      }
+    }
+
+    // The default folder's notes always use folderId=null regardless of the
+    // backing row UUID. Bidirectional mapping:
+    //   • scope = backingRow.id  →  also include null (direct-default notes)
+    //   • scope = null           →  also include backingRow.id + all its subfolder descendants
+    const defaultBackingRow = folders.find(
+      (f) =>
+        !f.parentId &&
+        f.ownerId === currentUserId &&
+        f.name === (defaultFolderName || "Notes"),
+    );
+    if (defaultBackingRow) {
+      if (folderIdSet.has(defaultBackingRow.id)) {
+        // Already in scope via UUID — also capture the folderId=null notes
+        folderIdSet.add(null);
+      } else if (folderIdSet.has(null)) {
+        // Scope is null (active note in default section) — expand to backing row + children
+        folderIdSet.add(defaultBackingRow.id);
+        const queue = [defaultBackingRow.id];
+        while (queue.length) {
+          const pid = queue.shift();
+          for (const f of folders) {
+            if (f.parentId === pid) {
+              folderIdSet.add(f.id);
+              queue.push(f.id);
+            }
+          }
+        }
+      }
+    }
+
     const folderScoped = accessible.filter(
       (n) =>
-        (n.folderId ?? null) === activeFolderId &&
+        folderIdSet.has(n.folderId ?? null) &&
         (activeOwnerId === null || n.ownerId === activeOwnerId),
     );
 
@@ -380,7 +451,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     }));
 
     return { nodes, links };
-  }, [notes, tagFilter, currentUserId, graphScope]);
+  }, [notes, folders, defaultFolderName, tagFilter, currentUserId, graphScope]);
 
   // Re-fit whenever the panel is resized (e.g. expand/collapse toggle)
   // Must be declared AFTER graphData to avoid temporal dead zone reference.

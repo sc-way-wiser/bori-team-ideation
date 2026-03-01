@@ -5,6 +5,10 @@ const toFolder = (row) => ({
   id: row.id,
   ownerId: row.owner_id,
   name: row.name,
+  parentId: row.parent_id ?? null,
+  sharedWith: row.shared_with ?? [],
+  editAccess: row.edit_access ?? [],
+  editRequests: row.edit_requests ?? [],
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -32,8 +36,10 @@ export async function fetchFolders() {
  * Insert a new folder row.  Returns the created folder or null on error.
  * owner_id defaults to the current authenticated user via auth.uid().
  */
-export async function insertFolder({ id, name, ownerId }) {
-  const row = ownerId ? { id, name, owner_id: ownerId } : { id, name };
+export async function insertFolder({ id, name, ownerId, parentId }) {
+  const row = { id, name };
+  if (ownerId) row.owner_id = ownerId;
+  if (parentId) row.parent_id = parentId;
   const { data, error } = await supabase
     .from("ideation_folders")
     .upsert(row, { onConflict: "id", ignoreDuplicates: true })
@@ -72,5 +78,28 @@ export async function deleteFolderById(id) {
 
   if (error) {
     console.error("[foldersService] deleteFolderById error:", error.message);
+  }
+}
+
+/**
+ * Update sharing arrays on a folder row.
+ */
+export async function patchFolderSharing(
+  id,
+  sharedWith,
+  editAccess,
+  editRequests,
+) {
+  const { error } = await supabase
+    .from("ideation_folders")
+    .update({
+      shared_with: sharedWith,
+      edit_access: editAccess,
+      edit_requests: editRequests,
+    })
+    .eq("id", id);
+
+  if (error) {
+    console.error("[foldersService] patchFolderSharing error:", error.message);
   }
 }

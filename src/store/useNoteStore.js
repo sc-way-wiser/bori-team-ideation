@@ -14,6 +14,7 @@ import {
   insertFolder,
   renameFolderById,
   deleteFolderById,
+  patchFolderSharing,
 } from "../services/foldersService.js";
 import {
   fetchConfig,
@@ -137,6 +138,70 @@ export const useNoteStore = create((set, get) => ({
         n.folderName !== "Notes",
     );
     const defaultFolderName = ownDefaultNote?.folderName ?? configDefaultName;
+
+    // ── Ensure exactly ONE backing row for the default folder ─────────────
+    // Collect all top-level own rows with the default name (duplicates included)
+    const allDefaultRows = folders.filter(
+      (f) =>
+        !f.parentId && f.ownerId === user.id && f.name === defaultFolderName,
+    );
+    if (allDefaultRows.length > 1) {
+      // Keep the first, delete the rest from DB and from local array
+      const toDelete = allDefaultRows.slice(1);
+      toDelete.forEach((f) => deleteFolderById(f.id));
+      const deleteIds = new Set(toDelete.map((f) => f.id));
+      folders.splice(
+        0,
+        folders.length,
+        ...folders.filter((f) => !deleteIds.has(f.id)),
+      );
+    } else if (allDefaultRows.length === 0) {
+      // No row at all — reuse an orphaned "Notes" row or create fresh
+      const orphaned = folders.find(
+        (f) => !f.parentId && f.ownerId === user.id && f.name === "Notes",
+      );
+      if (orphaned && defaultFolderName !== "Notes") {
+        await renameFolderById(orphaned.id, defaultFolderName);
+        const idx = folders.findIndex((f) => f.id === orphaned.id);
+        folders[idx] = { ...folders[idx], name: defaultFolderName };
+      } else if (!orphaned) {
+        const newId = uuidv4();
+        folders.push({
+          id: newId,
+          name: defaultFolderName,
+          ownerId: user.id,
+          parentId: null,
+          sharedWith: [],
+          editAccess: [],
+          editRequests: [],
+          createdAt: new Date().toISOString(),
+        });
+        await insertFolder({
+          id: newId,
+          name: defaultFolderName,
+          ownerId: user.id,
+          parentId: null,
+        });
+      }
+    }
+
+    // Normalize notes that had folderId set to the default folder's backing
+    // row UUID back to null — they belong in the unfiled default section.
+    const defaultBackingId = folders.find(
+      (f) =>
+        !f.parentId && f.ownerId === user.id && f.name === defaultFolderName,
+    )?.id;
+    if (defaultBackingId) {
+      for (let i = 0; i < cleaned.length; i++) {
+        if (
+          cleaned[i].folderId === defaultBackingId &&
+          cleaned[i].ownerId === user.id
+        ) {
+          cleaned[i] = { ...cleaned[i], folderId: null };
+          dbPatchFolder(cleaned[i].id, null, defaultFolderName);
+        }
+      }
+    }
 
     set({
       notes: cleaned,
@@ -440,14 +505,39 @@ export const useNoteStore = create((set, get) => ({
       ? get().folders.find((f) => f.id === folderId)
       : null;
     const folderName = folder?.name ?? get().defaultFolderName;
+
+    // Resolve effective sharing on the target folder (or its parent)
+    const resolveSharing = (f) => {
+      if (!f) return { sharedWith: [], editAccess: [] };
+      // If the folder itself is shared, use its sharing
+      if ((f.sharedWith ?? []).length > 0) return f;
+      // Otherwise check the parent folder
+      if (f.parentId) {
+        const parent = get().folders.find((p) => p.id === f.parentId);
+        if (parent && (parent.sharedWith ?? []).length > 0) return parent;
+      }
+      return { sharedWith: [], editAccess: [] };
+    };
+    const targetSharing = resolveSharing(folder);
+    const targetSharedWith = targetSharing.sharedWith ?? [];
+    const targetEditAccess = targetSharing.editAccess ?? [];
+
     let updated;
     set((state) => ({
       notes: state.notes.map((n) => {
         if (n.id !== noteId) return n;
+        // Auto-share: if target folder is shared, adopt its sharing.
+        // Auto-unshare: if target folder is NOT shared, clear sharing.
+        const newSharedWith =
+          targetSharedWith.length > 0 ? [...targetSharedWith] : [];
+        const newEditAccess =
+          targetEditAccess.length > 0 ? [...targetEditAccess] : [];
         updated = {
           ...n,
           folderId,
           folderName,
+          sharedWith: newSharedWith,
+          editAccess: newEditAccess,
           updatedAt: new Date().toISOString(),
         };
         return updated;
@@ -457,33 +547,49 @@ export const useNoteStore = create((set, get) => ({
       // Write folder assignment immediately (not debounced) so shared
       // users see the correct folder hierarchy on their next load
       dbPatchFolder(updated.id, updated.folderId, updated.folderName);
+      dbPatchSharing(
+        updated.id,
+        updated.sharedWith,
+        updated.editAccess,
+        updated.editRequests ?? [],
+      );
       scheduleUpsert(updated, 800);
     }
   },
 
-  createFolder: (name) => {
+  createFolder: (name, parentId = null) => {
     const id = uuidv4();
     const userId = get().currentUserId;
     const folder = {
       id,
       name,
+      parentId,
       createdAt: new Date().toISOString(),
     };
     set((state) => ({ folders: [...state.folders, folder] }));
-    insertFolder({ id, name, ownerId: userId });
+    insertFolder({ id, name, ownerId: userId, parentId });
     return id;
   },
 
   deleteFolder: (id) => {
+    // Collect child sub-folder ids (DB cascade handles the rows, but we
+    // need to unfile notes assigned to them in local state too).
+    const childIds = get()
+      .folders.filter((f) => f.parentId === id)
+      .map((f) => f.id);
+    const removedIds = new Set([id, ...childIds]);
+
     // Collect notes that will be unfiled so we can sync them
-    const affectedNotes = get().notes.filter((n) => n.folderId === id);
+    const affectedNotes = get().notes.filter((n) => removedIds.has(n.folderId));
     set((state) => ({
-      folders: state.folders.filter((f) => f.id !== id),
+      folders: state.folders.filter((f) => !removedIds.has(f.id)),
       notes: state.notes.map((n) =>
-        n.folderId === id ? { ...n, folderId: null, folderName: null } : n,
+        removedIds.has(n.folderId)
+          ? { ...n, folderId: null, folderName: null }
+          : n,
       ),
     }));
-    deleteFolderById(id); // DB delete
+    deleteFolderById(id); // DB cascade deletes children too
     affectedNotes.forEach((n) =>
       scheduleUpsert({ ...n, folderId: null, folderName: null }, 200),
     );
@@ -505,13 +611,45 @@ export const useNoteStore = create((set, get) => ({
   },
 
   renameDefaultFolder: (name) => {
-    set((state) => ({
-      defaultFolderName: name,
-      // Update folderName on all notes currently in the default folder
-      notes: state.notes.map((n) =>
-        n.folderId === null ? { ...n, folderName: name } : n,
-      ),
-    }));
+    // Also rename the backing ideation_folders row if it exists
+    const { folders, defaultFolderName: oldName, currentUserId } = get();
+    const backingRow = folders.find(
+      (f) => !f.parentId && f.ownerId === currentUserId && f.name === oldName,
+    );
+    if (backingRow) {
+      // Rename the existing backing row
+      set((state) => ({
+        defaultFolderName: name,
+        notes: state.notes.map((n) =>
+          n.folderId === null ? { ...n, folderName: name } : n,
+        ),
+        folders: state.folders.map((f) =>
+          f.id === backingRow.id ? { ...f, name } : f,
+        ),
+      }));
+      renameFolderById(backingRow.id, name);
+    } else {
+      // No backing row yet — create one with the new name
+      const newId = uuidv4();
+      const newRow = {
+        id: newId,
+        name,
+        ownerId: currentUserId,
+        parentId: null,
+        sharedWith: [],
+        editAccess: [],
+        editRequests: [],
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({
+        defaultFolderName: name,
+        notes: state.notes.map((n) =>
+          n.folderId === null ? { ...n, folderName: name } : n,
+        ),
+        folders: [...state.folders, newRow],
+      }));
+      insertFolder({ id: newId, name, ownerId: currentUserId, parentId: null });
+    }
     // Immediately patch DB so shared users see the new name
     const defaultNotes = get().notes.filter(
       (n) => n.folderId === null && n.ownerId === get().currentUserId,
@@ -521,6 +659,209 @@ export const useNoteStore = create((set, get) => ({
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.id) saveDefaultFolderName(name, user.id);
     });
+  },
+
+  // ── Folder sharing ──────────────────────────────────────────────────────
+
+  /** Share a folder (and all its notes) with a user */
+  addFolderCollaborator: (folderId, userId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const sharedWith = folder.sharedWith ?? [];
+    if (sharedWith.includes(userId)) return;
+    const newSharedWith = [...sharedWith, userId];
+    // Update folder state
+    set((state) => ({
+      folders: state.folders.map((f) =>
+        f.id === folderId ? { ...f, sharedWith: newSharedWith } : f,
+      ),
+    }));
+    patchFolderSharing(
+      folderId,
+      newSharedWith,
+      folder.editAccess ?? [],
+      folder.editRequests ?? [],
+    );
+    // Auto-share all notes in this folder with the user
+    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    for (const n of folderNotes) {
+      if (!(n.sharedWith ?? []).includes(userId)) {
+        const updated = {
+          ...n,
+          sharedWith: [...(n.sharedWith ?? []), userId],
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          notes: state.notes.map((x) => (x.id === n.id ? updated : x)),
+        }));
+        dbPatchSharing(
+          updated.id,
+          updated.sharedWith,
+          updated.editAccess,
+          updated.editRequests ?? [],
+        );
+        scheduleUpsert(updated, 300);
+      }
+    }
+  },
+
+  /** Unshare a folder (and all its notes) from a user */
+  removeFolderCollaborator: (folderId, userId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const newSharedWith = (folder.sharedWith ?? []).filter(
+      (id) => id !== userId,
+    );
+    const newEditAccess = (folder.editAccess ?? []).filter(
+      (id) => id !== userId,
+    );
+    const newEditRequests = (folder.editRequests ?? []).filter(
+      (id) => id !== userId,
+    );
+    set((state) => ({
+      folders: state.folders.map((f) =>
+        f.id === folderId
+          ? {
+              ...f,
+              sharedWith: newSharedWith,
+              editAccess: newEditAccess,
+              editRequests: newEditRequests,
+            }
+          : f,
+      ),
+    }));
+    patchFolderSharing(folderId, newSharedWith, newEditAccess, newEditRequests);
+    // Auto-unshare all notes in this folder from the user
+    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    for (const n of folderNotes) {
+      if ((n.sharedWith ?? []).includes(userId)) {
+        const updated = {
+          ...n,
+          sharedWith: (n.sharedWith ?? []).filter((id) => id !== userId),
+          editAccess: (n.editAccess ?? []).filter((id) => id !== userId),
+          editRequests: (n.editRequests ?? []).filter((id) => id !== userId),
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          notes: state.notes.map((x) => (x.id === n.id ? updated : x)),
+        }));
+        dbPatchSharing(
+          updated.id,
+          updated.sharedWith,
+          updated.editAccess,
+          updated.editRequests,
+        );
+        scheduleUpsert(updated, 300);
+      }
+    }
+  },
+
+  /** Request edit access on a folder */
+  requestFolderEditAccess: (folderId, userId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const editRequests = folder.editRequests ?? [];
+    if (editRequests.includes(userId)) return;
+    const newEditRequests = [...editRequests, userId];
+    set((state) => ({
+      folders: state.folders.map((f) =>
+        f.id === folderId ? { ...f, editRequests: newEditRequests } : f,
+      ),
+    }));
+    patchFolderSharing(
+      folderId,
+      folder.sharedWith ?? [],
+      folder.editAccess ?? [],
+      newEditRequests,
+    );
+  },
+
+  /** Grant edit access on a folder (and all its notes) */
+  grantFolderEditAccess: (folderId, userId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const editAccess = folder.editAccess ?? [];
+    if (editAccess.includes(userId)) return;
+    const newEditAccess = [...editAccess, userId];
+    const newEditRequests = (folder.editRequests ?? []).filter(
+      (id) => id !== userId,
+    );
+    set((state) => ({
+      folders: state.folders.map((f) =>
+        f.id === folderId
+          ? { ...f, editAccess: newEditAccess, editRequests: newEditRequests }
+          : f,
+      ),
+    }));
+    patchFolderSharing(
+      folderId,
+      folder.sharedWith ?? [],
+      newEditAccess,
+      newEditRequests,
+    );
+    // Grant edit access on all notes in this folder too
+    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    for (const n of folderNotes) {
+      if (!(n.editAccess ?? []).includes(userId)) {
+        const updated = {
+          ...n,
+          editAccess: [...(n.editAccess ?? []), userId],
+          editRequests: (n.editRequests ?? []).filter((id) => id !== userId),
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          notes: state.notes.map((x) => (x.id === n.id ? updated : x)),
+        }));
+        dbPatchSharing(
+          updated.id,
+          updated.sharedWith,
+          updated.editAccess,
+          updated.editRequests,
+        );
+        scheduleUpsert(updated, 300);
+      }
+    }
+  },
+
+  /** Revoke edit access on a folder (and all its notes) */
+  revokeFolderEditAccess: (folderId, userId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const newEditAccess = (folder.editAccess ?? []).filter(
+      (id) => id !== userId,
+    );
+    set((state) => ({
+      folders: state.folders.map((f) =>
+        f.id === folderId ? { ...f, editAccess: newEditAccess } : f,
+      ),
+    }));
+    patchFolderSharing(
+      folderId,
+      folder.sharedWith ?? [],
+      newEditAccess,
+      folder.editRequests ?? [],
+    );
+    // Revoke edit on all notes in the folder
+    const folderNotes = get().notes.filter((n) => n.folderId === folderId);
+    for (const n of folderNotes) {
+      if ((n.editAccess ?? []).includes(userId)) {
+        const updated = {
+          ...n,
+          editAccess: (n.editAccess ?? []).filter((id) => id !== userId),
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          notes: state.notes.map((x) => (x.id === n.id ? updated : x)),
+        }));
+        dbPatchSharing(
+          updated.id,
+          updated.sharedWith,
+          updated.editAccess,
+          updated.editRequests ?? [],
+        );
+        scheduleUpsert(updated, 300);
+      }
+    }
   },
 
   /** Directly links two notes (bidirectional strong relationship) */

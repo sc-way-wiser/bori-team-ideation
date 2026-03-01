@@ -1218,13 +1218,13 @@ const NoteEditor = ({ noteId, onNavigate }) => {
   const linkedNotes =
     note.linkedNoteIds?.map((id) => getNoteById(id)).filter(Boolean) ?? [];
 
-  // Notes in the same folder available to link (excludes self + already linked)
+  // Notes available to link — all accessible notes except self and already-linked.
+  // We intentionally don't scope to the same folder: the [[ inline suggestion
+  // already crosses folders and the link picker should be consistent.
   const linkedIds = new Set(note.linkedNoteIds ?? []);
+
   const folderNotes = notes.filter(
-    (n) =>
-      n.id !== noteId &&
-      !linkedIds.has(n.id) &&
-      (n.folderId === note.folderId || (!n.folderId && !note.folderId)),
+    (n) => n.id !== noteId && !linkedIds.has(n.id),
   );
   const filteredFolderNotes = linkSearch.trim()
     ? folderNotes.filter((n) =>
@@ -1789,40 +1789,40 @@ const NoteEditor = ({ noteId, onNavigate }) => {
 
         {/* Linked notes */}
         <div className="mt-8 border-t border-(--color-border-lt) pt-4">
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider flex-1">
-              Linked Notes
-            </p>
+          <div className="flex flex-col items-start gap-2 mb-2">
             {canEdit && (
               <button
                 ref={linkBtnRef}
                 onClick={openLinkPicker}
-                className="flex items-center gap-1 text-xs px-2 py-3 rounded-full border border-(--color-border) text-(--color-text-muted) hover:border-(--color-primary) hover:text-(--color-primary-dk) transition-colors"
+                className="flex items-center gap-1 text-sm px-2 py-3 rounded-full text-(--color-text-muted) hover:border-(--color-primary) hover:text-(--color-primary-dk) transition-colors"
               >
-                <PlusIcon size={11} weight="bold" /> Link notes
+                <PlusIcon size={11} weight="bold" /> Link Notes
               </button>
             )}
           </div>
           {linkedNotes.length > 0 && (
             <div className="flex flex-wrap gap-2">
+              {/* <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider flex-1">
+                Linked Notes
+              </p> */}
               {linkedNotes.map((ln) =>
                 ln ? (
                   <div key={ln.id} className="flex items-center gap-0.5 group">
                     <button
                       onClick={() => onNavigate(ln.id)}
-                      className="flex items-center gap-1 text-sm text-(--color-primary-dk) hover:bg-(--color-primary-bg) border border-(--color-border) pl-3 pr-2 py-1 rounded-full transition-colors"
+                      className=" relative flex items-center gap-1 text-sm text-(--color-primary-dk) hover:bg-(--color-primary-bg) border border-(--color-border) px-4 pr-6 py-2 rounded-full transition-colors"
                     >
                       <ArrowRightIcon size={12} /> {ln.title}
+                      {canEdit && (
+                        <button
+                          onClick={() => removeLinkedNote(noteId, ln.id)}
+                          className="absolute right-1 w-5 h-5 flex items-center justify-center rounded-full text-(--color-text-muted) opacity-0 group-hover:opacity-100 hover:text-(--color-primary-dk) transition-all"
+                          title="Remove link"
+                        >
+                          <XIcon size={11} weight="bold" />
+                        </button>
+                      )}
                     </button>
-                    {canEdit && (
-                      <button
-                        onClick={() => removeLinkedNote(noteId, ln.id)}
-                        className="w-5 h-5 flex items-center justify-center rounded-full text-(--color-text-muted) opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all"
-                        title="Remove link"
-                      >
-                        <XIcon size={11} weight="bold" />
-                      </button>
-                    )}
                   </div>
                 ) : null,
               )}
