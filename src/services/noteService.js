@@ -83,7 +83,11 @@ export async function deleteNoteById(id) {
 export async function patchNoteFolder(noteId, folderId, folderName) {
   const { error } = await supabase
     .from("bori_ideation")
-    .update({ folder_id: folderId ?? null, folder_name: folderName ?? null })
+    .update({
+      folder_id: folderId ?? null,
+      folder_name: folderName ?? null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", noteId);
 
   if (error) {

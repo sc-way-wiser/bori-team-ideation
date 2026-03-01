@@ -101,25 +101,29 @@ export const useNoteStore = create(
               return n;
             }
 
-            // ── Own notes: local state is authoritative ──────────────────────
-            // If DB has a folderId but local explicitly moved it to default
-            // folder (folderId=null + folderName set), trust local — it's newer
-            if (
-              n.folderId &&
-              local &&
-              local.folderId === null &&
-              local.folderName
-            ) {
-              return { ...n, folderId: null, folderName: local.folderName };
+            // ── Own notes: DB is the source of truth unless local is newer ──
+            // Compare timestamps — whichever was updated more recently wins.
+            const dbTime = n.updatedAt ? new Date(n.updatedAt).getTime() : 0;
+            const localTime = local?.updatedAt
+              ? new Date(local.updatedAt).getTime()
+              : 0;
+            const localIsNewer = localTime > dbTime;
+
+            // If local is strictly newer, adopt local folder assignment
+            if (localIsNewer && local) {
+              const resolvedName =
+                local.folderName ??
+                (local.folderId ? foldersMap.get(local.folderId) : null) ??
+                defaultName;
+              return {
+                ...n,
+                folderId: local.folderId ?? null,
+                folderName: resolvedName,
+                updatedAt: local.updatedAt,
+              };
             }
-            // If DB has no folderId but local does, adopt the local value
-            if (!n.folderId && local?.folderId) {
-              const name =
-                local.folderName ?? foldersMap.get(local.folderId) ?? null;
-              return { ...n, folderId: local.folderId, folderName: name };
-            }
-            // If DB has folderId but no folderName, resolve from folders map
-            // or fall back to the persisted local note's folderName
+
+            // DB is newer (or equal) — trust it, but fill in missing folderName
             if (n.folderId && !n.folderName) {
               const name =
                 foldersMap.get(n.folderId) ?? local?.folderName ?? null;
