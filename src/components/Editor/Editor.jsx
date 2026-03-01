@@ -2,6 +2,7 @@ import React, {
   useRef,
   useState,
   useEffect,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
@@ -888,6 +889,8 @@ const NoteEditor = ({ noteId, onNavigate }) => {
     addLinkedNote,
     removeLinkedNote,
     notes,
+    folders,
+    defaultFolderName,
     currentUserId,
     pendingShareNoteId,
     clearPendingShare,
@@ -1129,6 +1132,55 @@ const NoteEditor = ({ noteId, onNavigate }) => {
     editor.setEditable(canEdit);
   }, [editor, canEdit]);
 
+  /* ── Folder-tree ID set for the link picker (must be a hook, before early returns) ── */
+  const treeFolderIds = useMemo(() => {
+    const rawId = note?.folderId ?? null;
+    // Walk up to root ancestor
+    let rootId = rawId;
+    if (rootId) {
+      let cur = folders.find((f) => f.id === rootId);
+      while (cur?.parentId) {
+        const parent = folders.find((f) => f.id === cur.parentId);
+        if (!parent) break;
+        cur = parent;
+      }
+      rootId = cur?.id ?? rootId;
+    }
+    // Default folder: notes use folderId=null but sub-folders use a backing row UUID.
+    // Bridge both so neither direction is excluded.
+    const defaultBackingRow = folders.find(
+      (f) =>
+        !f.parentId &&
+        f.ownerId === currentUserId &&
+        f.name === (defaultFolderName || "Notes"),
+    );
+    const set = new Set();
+    const bfsStart = rootId ?? defaultBackingRow?.id ?? null;
+    if (rootId === null) set.add(null);
+    if (
+      defaultBackingRow &&
+      (rootId === null || rootId === defaultBackingRow.id)
+    ) {
+      // Default folder: notes stored with folderId=null AND the backing UUID must both be included
+      set.add(null);
+      set.add(defaultBackingRow.id);
+    }
+    if (bfsStart) {
+      set.add(bfsStart);
+      const queue = [bfsStart];
+      while (queue.length) {
+        const pid = queue.shift();
+        for (const f of folders) {
+          if (f.parentId === pid) {
+            set.add(f.id);
+            queue.push(f.id);
+          }
+        }
+      }
+    }
+    return set;
+  }, [note?.folderId, folders, currentUserId, defaultFolderName]);
+
   /* ── Conditional returns AFTER all hooks ── */
 
   if (!isAccessible(note)) {
@@ -1218,13 +1270,15 @@ const NoteEditor = ({ noteId, onNavigate }) => {
   const linkedNotes =
     note.linkedNoteIds?.map((id) => getNoteById(id)).filter(Boolean) ?? [];
 
-  // Notes available to link — all accessible notes except self and already-linked.
-  // We intentionally don't scope to the same folder: the [[ inline suggestion
-  // already crosses folders and the link picker should be consistent.
+  // Notes available to link — scoped to the same folder tree (parent + all sub-folders).
+  // Notes from completely different top-level folders are excluded.
   const linkedIds = new Set(note.linkedNoteIds ?? []);
 
   const folderNotes = notes.filter(
-    (n) => n.id !== noteId && !linkedIds.has(n.id),
+    (n) =>
+      n.id !== noteId &&
+      !linkedIds.has(n.id) &&
+      treeFolderIds.has(n.folderId ?? null),
   );
   const filteredFolderNotes = linkSearch.trim()
     ? folderNotes.filter((n) =>
