@@ -1198,7 +1198,22 @@ const FolderSection = ({
   isSubFolder = false,
   children,
 }) => {
-  const [open, setOpen] = useState(true);
+  // Parent folders persist open/close in localStorage; sub-folders default closed.
+  const lsKey =
+    !isSubFolder && folderId ? `bori-folder-open-${folderId}` : null;
+  const [open, setOpenRaw] = useState(() => {
+    if (isSubFolder) return false;
+    if (lsKey) {
+      const stored = localStorage.getItem(lsKey);
+      if (stored !== null) return stored === "true";
+    }
+    return true; // parent folders open by default on first visit
+  });
+  const setOpen = (val) => {
+    const next = typeof val === "function" ? val(open) : val;
+    setOpenRaw(next);
+    if (lsKey) localStorage.setItem(lsKey, String(next));
+  };
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(folderName);
   const [folderShareOpen, setFolderShareOpen] = useState(false);
