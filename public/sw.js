@@ -1,5 +1,5 @@
-// tIFany Service Worker
-const CACHE_NAME = "tifany-v1";
+// Idearium Service Worker
+const CACHE_NAME = "idearium-v1";
 const SW_VERSION = "1.0.0";
 
 // ── Install: skip waiting immediately so new SW activates right away ───────────

@@ -288,6 +288,21 @@ const NoteRow = ({
   const hasRequested = (note.editRequests ?? []).includes(currentUserId);
   const hasLinkedNote = notes.some((n) => n.originNoteId === note.id);
   const { isMobile } = useBrowser();
+
+  // Detect if this is User B's own note sitting in a shared folder
+  const isInSharedFolder =
+    isOwner &&
+    !note.folderId &&
+    note.folderName &&
+    notes.some(
+      (n) =>
+        n.ownerId !== currentUserId &&
+        n.folderName === note.folderName &&
+        (n.sharedWith ?? []).includes(currentUserId),
+    );
+  const isAlreadySharedToFolder =
+    isInSharedFolder && (note.sharedWith ?? []).length > 0;
+  const { shareToFolderCollaborators } = useNoteStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   // sheet-level sub-view: null | "move"
@@ -479,7 +494,24 @@ const NoteRow = ({
                 }}
                 className="w-44 bg-(--color-surface) border border-(--color-border) rounded-lg shadow-lg overflow-hidden text-sm"
               >
-                {isOwner && (
+                {isOwner && isInSharedFolder && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      shareToFolderCollaborators(note.id);
+                    }}
+                    disabled={isAlreadySharedToFolder}
+                    className="w-full flex items-center gap-2 px-3 py-3 hover:bg-(--color-hover) text-(--color-text) transition-colors disabled:opacity-50 disabled:cursor-default"
+                  >
+                    <ShareNetworkIcon size={18} />
+                    {isAlreadySharedToFolder
+                      ? "Shared to folder"
+                      : "Share to folder"}
+                  </button>
+                )}
+
+                {isOwner && !isInSharedFolder && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -603,8 +635,26 @@ const NoteRow = ({
             </p>
             <div className="border-t border-(--color-border-lt) mb-1" />
 
-            {/* Share — owner only */}
-            {isOwner && (
+            {/* Share to folder — one-click for notes in shared folders */}
+            {isOwner && isInSharedFolder && (
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSheetView(null);
+                  shareToFolderCollaborators(note.id);
+                }}
+                disabled={isAlreadySharedToFolder}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-(--color-text) hover:bg-(--color-hover) transition-colors disabled:opacity-50 disabled:cursor-default"
+              >
+                <ShareNetworkIcon size={18} />
+                {isAlreadySharedToFolder
+                  ? "Shared to folder"
+                  : "Share to folder"}
+              </button>
+            )}
+
+            {/* Share — owner only (normal folders) */}
+            {isOwner && !isInSharedFolder && (
               <button
                 ref={mobileShareButtonRef}
                 onClick={() => {
@@ -846,7 +896,7 @@ const FolderSection = ({
           </div>
         )}
 
-        {!readonly && (
+        {onAddNote && (
           <button
             onClick={onAddNote}
             title={folderId ? "New note in folder" : "New note"}
@@ -979,6 +1029,23 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
     if (activeNote.originNoteId) ids.add(activeNote.originNoteId);
     return ids;
   }, [activeNote, notes, activeNoteId]);
+
+  // Folder names from other users' shared notes — used to keep B's
+  // shared-folder notes out of the root section.
+  const sharedFolderNames = useMemo(() => {
+    const names = new Set();
+    for (const n of notes) {
+      if (
+        n.ownerId !== currentUserId &&
+        (n.sharedWith ?? []).includes(currentUserId) &&
+        n.folderName
+      ) {
+        names.add(n.folderName);
+      }
+    }
+    return names;
+  }, [notes, currentUserId]);
+
   const isAccessible = (note) => {
     if (!note.ownerId) return false;
     if (note.ownerId === currentUserId) return true;
@@ -1022,7 +1089,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
       {/* Mobile close header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-(--color-border) md:hidden">
         <span className="text-base font-bold text-stone-400 tracking-wider">
-          IFany
+          Idearium
         </span>
         <button
           onClick={onClose}
@@ -1152,7 +1219,11 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
               folderId={null}
               folderName={defaultFolderName}
               notes={notes.filter(
-                (n) => n.folderId == null && n.ownerId === currentUserId,
+                (n) =>
+                  n.folderId == null &&
+                  n.ownerId === currentUserId &&
+                  // Exclude notes that belong to a shared folder
+                  !(n.folderName && sharedFolderNames.has(n.folderName)),
               )}
               activeNoteId={activeNoteId}
               isDragOver={dragOverFolder === "root"}
@@ -1191,6 +1262,27 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(note);
               }
+
+              // Include User B's own notes that sit in a shared folder
+              const sharedFolderNames = new Set(
+                Object.keys(groups).filter((k) => k !== "__root__"),
+              );
+              const myNotesInSharedFolders = notes.filter(
+                (n) =>
+                  n.ownerId === currentUserId &&
+                  n.folderName &&
+                  sharedFolderNames.has(n.folderName) &&
+                  !n.folderId, // folderId is null because B doesn't own A's folder object
+              );
+              for (const note of myNotesInSharedFolders) {
+                const key = note.folderName;
+                if (!groups[key]) groups[key] = [];
+                // Avoid duplicates
+                if (!groups[key].some((n) => n.id === note.id)) {
+                  groups[key].push(note);
+                }
+              }
+
               const groupList = Object.entries(groups).map(
                 ([key, grpNotes]) => ({
                   key,
@@ -1228,6 +1320,10 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
                       onToggleSelect={toggleNoteSelect}
                       linkedNoteIdSet={linkedNoteIdSet}
                       readonly
+                      onAddNote={() => {
+                        const id = createNote(null, { folderName: group.name });
+                        onNoteSelect(id);
+                      }}
                     />
                   ))}
                 </>

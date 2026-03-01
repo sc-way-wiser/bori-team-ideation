@@ -81,14 +81,14 @@ const SignIn = ({ onClose }) => {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ backgroundColor: "var(--color-background)" }}
+      style={{ backgroundColor: "var(--color-surface)" }}
     >
       {/* Card */}
       <div
-        className="w-full max-w-sm rounded-2xl shadow-lg p-8 flex flex-col items-center gap-6 relative"
+        className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center gap-6 relative"
         style={{
           backgroundColor: "var(--color-surface)",
-          border: "1px solid var(--color-border)",
+          // border: "1px solid var(--color-border)",
         }}
       >
         {onClose && (
@@ -104,11 +104,11 @@ const SignIn = ({ onClose }) => {
         {/* Logo */}
         <div className="flex flex-col items-center gap-2">
           <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm"
+            className="w-18 h-18 rounded-full flex items-center justify-center shadow-sm"
             style={{ backgroundColor: "var(--color-primary)" }}
           >
             <LightbulbIcon
-              size={24}
+              size={30}
               style={{ color: "var(--color-on-primary)" }}
             />
           </div>
@@ -116,10 +116,7 @@ const SignIn = ({ onClose }) => {
             className="text-xl font-bold tracking-tight"
             style={{ color: "var(--color-text)" }}
           >
-            <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>
-              IF
-            </span>
-            any
+            idearium
           </h1>
           <p
             className="text-sm text-center"
@@ -144,7 +141,7 @@ const SignIn = ({ onClose }) => {
           </p>
 
           <div
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+            className="flex items-center gap-2 px-3 py-4 rounded-full"
             style={{
               backgroundColor: "var(--color-input)",
               border: "1.5px solid var(--color-border)",
@@ -166,7 +163,7 @@ const SignIn = ({ onClose }) => {
           </div>
 
           <div
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+            className="flex items-center gap-2 px-3 py-4 rounded-full"
             style={{
               backgroundColor: "var(--color-input)",
               border: "1.5px solid var(--color-border)",
@@ -188,10 +185,10 @@ const SignIn = ({ onClose }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 h-12 rounded-xl font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 h-14 rounded-full font-bold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             style={{
               backgroundColor: "var(--color-primary)",
-              color: "var(--color-primary-dk)",
+              color: "var(--color-on-primary)",
             }}
           >
             {isLoading ? (
@@ -227,7 +224,7 @@ const SignIn = ({ onClose }) => {
           type="button"
           onClick={onGoogleSignIn}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 h-12 rounded-xl font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-3 h-14 rounded-full font-bold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           style={{
             backgroundColor: "white",
             color: "#374151",

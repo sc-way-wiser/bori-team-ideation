@@ -25,9 +25,11 @@ const Layout = () => {
     useNoteStore();
   const { user, signOut } = useAuth();
   const [showSignIn, setShowSignIn] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showGraph, setShowGraph] = useState(() => window.innerWidth >= 1024);
   const [graphExpanded, setGraphExpanded] = useState(false);
   const [graphFitTrigger, setGraphFitTrigger] = useState(0);
+  const [handleVisible, setHandleVisible] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { loadConfig } = useConfigStore();
@@ -73,10 +75,7 @@ const Layout = () => {
         <div className="flex items-center gap-2 mr-auto">
           <LightbulbIcon size={20} className="text-(--color-primary-dk)" />
           <span className="font-bold text-2xl text-(--color-text) tracking-tight">
-            <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>
-              IF
-            </span>
-            any
+            idearium
           </span>
         </div>
 
@@ -144,7 +143,7 @@ const Layout = () => {
                 className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
                 style={{
                   backgroundColor: "var(--color-primary)",
-                  color: "var(--color-primary-dk)",
+                  color: "var(--color-on-primary)",
                 }}
                 title={user.email ?? ""}
               >
@@ -152,7 +151,7 @@ const Layout = () => {
               </div>
             )}
             <button
-              onClick={signOut}
+              onClick={() => setShowSignOutConfirm(true)}
               title="Sign out"
               className="p-1.5 rounded text-(--color-text-muted) hover:text-red-500 hover:bg-red-50 transition-colors"
             >
@@ -178,6 +177,43 @@ const Layout = () => {
           >
             <div onClick={(e) => e.stopPropagation()}>
               <SignIn onClose={() => setShowSignIn(false)} />
+            </div>
+          </div>
+        )}
+
+        {showSignOutConfirm && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
+            onClick={() => setShowSignOutConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-(--color-background) rounded-xl shadow-xl border border-(--color-border) p-6 w-full max-w-xs text-center space-y-4"
+            >
+              <p className="text-sm font-semibold text-(--color-text)">
+                Sign out?
+              </p>
+              <p className="text-xs text-(--color-text-muted)">
+                Are you sure you want to sign out?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowSignOutConfirm(false)}
+                  className="flex-1 py-3 rounded-full text-xs font-medium bg-(--color-input) text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSignOutConfirm(false);
+                    signOut();
+                  }}
+                  className="flex-1 py-3 rounded-full text-xs font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -263,15 +299,27 @@ const Layout = () => {
                     width: graphExpanded || isMobile ? "100%" : "50vw",
                     transition: "width 480ms cubic-bezier(0.4,0,0.2,1)",
                   }}
+                  onTransitionEnd={(e) => {
+                    if (e.propertyName === "width") setHandleVisible(true);
+                  }}
                 >
                   {/* Expand / collapse toggle on left border */}
                   {!isMobile && (
                     <button
                       onClick={() => {
-                        setGraphExpanded((v) => !v);
-                        setGraphFitTrigger((n) => n + 1);
+                        setHandleVisible(false);
+                        // Defer expand/collapse until the handle has faded out
+                        setTimeout(() => {
+                          setGraphExpanded((v) => !v);
+                          setGraphFitTrigger((n) => n + 1);
+                        }, 200);
                       }}
                       title={graphExpanded ? "Collapse graph" : "Expand graph"}
+                      style={{
+                        opacity: handleVisible ? 1 : 0,
+                        transition: "opacity 200ms ease",
+                        pointerEvents: handleVisible ? "auto" : "none",
+                      }}
                       className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-(--color-text) hover:text-stone-950 hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
                     >
                       {graphExpanded ? (
@@ -326,7 +374,7 @@ const EmptyState = ({ onCreate }) => (
       <p className="text-xl font-semibold text-(--color-text)">
         Welcome to{" "}
         <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>
-          IFany
+          Idearium
         </span>
       </p>
       <p className="text-sm mt-1 text-(--color-text-sec)">

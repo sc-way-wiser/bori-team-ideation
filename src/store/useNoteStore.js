@@ -34,6 +34,16 @@ function scheduleUpsert(note, delayMs = 800) {
   );
 }
 
+/** Returns true when a note has no meaningful user content. */
+function isNoteEmpty(note) {
+  if (!note) return true;
+  const hasTitle = note.title && note.title !== "Untitled";
+  const hasContent =
+    note.content && note.content.replace(/<[^>]*>/g, "").trim() !== "";
+  const hasTags = (note.tags ?? []).length > 0;
+  return !hasTitle && !hasContent && !hasTags;
+}
+
 export const useNoteStore = create(
   persist(
     (set, get) => ({
@@ -140,17 +150,29 @@ export const useNoteStore = create(
             );
           }
 
+          // ── Prune empty notes from DB that were never filled in ────────
+          const emptyOwn = merged.filter(
+            (n) => n.ownerId === user?.id && isNoteEmpty(n),
+          );
+          if (emptyOwn.length > 0) {
+            await Promise.all(emptyOwn.map((n) => dbDelete(n.id)));
+          }
+          const cleaned = merged.filter(
+            (n) => !(n.ownerId === user?.id && isNoteEmpty(n)),
+          );
+
           set({
-            notes: merged,
+            notes: cleaned,
             isLoading: false,
-            activeNoteId: get().activeNoteId ?? merged[0]?.id ?? null,
+            activeNoteId: get().activeNoteId ?? cleaned[0]?.id ?? null,
           });
         } else {
-          const local = get().notes;
+          // Only push non-empty local notes to DB
+          const local = get().notes.filter((n) => !isNoteEmpty(n));
           if (local.length > 0) {
             await Promise.all(local.map((n) => dbUpsert(n)));
           }
-          set({ isLoading: false });
+          set({ notes: local, isLoading: false });
         }
       },
 
@@ -160,7 +182,11 @@ export const useNoteStore = create(
           console.warn("Cannot create note: no current user ID");
           return null;
         }
-        const { linkedOnly = false, originNote = null } = opts;
+        const {
+          linkedOnly = false,
+          originNote = null,
+          folderName: explicitFolderName = null,
+        } = opts;
         const id = uuidv4();
         const now = new Date().toISOString();
         const folder = folderId
@@ -173,7 +199,8 @@ export const useNoteStore = create(
           tags: [],
           linkedNoteIds: [],
           folderId: folderId ?? null,
-          folderName: folder?.name ?? get().defaultFolderName,
+          folderName:
+            explicitFolderName ?? folder?.name ?? get().defaultFolderName,
           isVisible: true,
           ownerId: userId,
           sharedWith: [],
@@ -188,7 +215,7 @@ export const useNoteStore = create(
           notes: [newNote, ...state.notes],
           activeNoteId: id,
         }));
-        dbUpsert(newNote);
+        // Don't persist to DB yet — the first real edit (updateNote) will do it.
         return id;
       },
 
@@ -341,7 +368,20 @@ export const useNoteStore = create(
         if (updated) scheduleUpsert(updated, 200);
       },
 
-      setActiveNote: (id) => set({ activeNoteId: id }),
+      setActiveNote: (id) => {
+        const prev = get().activeNoteId;
+        // Auto-delete the note we're leaving if it's still empty
+        if (prev && prev !== id) {
+          const old = get().notes.find((n) => n.id === prev);
+          if (old && old.ownerId === get().currentUserId && isNoteEmpty(old)) {
+            set((state) => ({
+              notes: state.notes.filter((n) => n.id !== prev),
+            }));
+            dbDelete(prev);
+          }
+        }
+        set({ activeNoteId: id });
+      },
 
       requestShareFor: (id) =>
         set({ activeNoteId: id, pendingShareNoteId: id }),
@@ -579,6 +619,59 @@ export const useNoteStore = create(
         }));
         if (updatedA) scheduleUpsert(updatedA, 300);
         if (updatedB) scheduleUpsert(updatedB, 300);
+      },
+
+      /**
+       * One-click share: copies the folder owner's sharedWith list
+       * (+ the owner themselves) onto the given note.
+       */
+      shareToFolderCollaborators: (noteId) => {
+        const note = get().notes.find((n) => n.id === noteId);
+        if (!note || !note.folderName) return;
+        const userId = get().currentUserId;
+
+        // Find notes in that same folderName owned by someone else
+        const ownerNotes = get().notes.filter(
+          (n) =>
+            n.folderName === note.folderName &&
+            n.ownerId !== userId &&
+            (n.sharedWith ?? []).includes(userId),
+        );
+        if (ownerNotes.length === 0) return;
+
+        // Collect all collaborators from the folder owner's notes + the owner
+        const collabSet = new Set();
+        for (const on of ownerNotes) {
+          collabSet.add(on.ownerId);
+          for (const uid of on.sharedWith ?? []) collabSet.add(uid);
+        }
+        // Remove self from the set
+        collabSet.delete(userId);
+        const sharedWith = [...collabSet];
+        const editAccess = [...collabSet];
+
+        let updated;
+        set((state) => ({
+          notes: state.notes.map((n) => {
+            if (n.id !== noteId) return n;
+            updated = {
+              ...n,
+              sharedWith,
+              editAccess,
+              updatedAt: new Date().toISOString(),
+            };
+            return updated;
+          }),
+        }));
+        if (updated) {
+          dbPatchSharing(
+            updated.id,
+            updated.sharedWith,
+            updated.editAccess,
+            updated.editRequests ?? [],
+          );
+          scheduleUpsert(updated, 300);
+        }
       },
 
       getNoteById: (id) => get().notes.find((n) => n.id === id),
