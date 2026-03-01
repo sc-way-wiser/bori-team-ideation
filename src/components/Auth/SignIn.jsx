@@ -109,7 +109,7 @@ const SignIn = ({ onClose }) => {
           >
             <LightbulbIcon
               size={24}
-              style={{ color: "var(--color-primary-dk)" }}
+              style={{ color: "var(--color-on-primary)" }}
             />
           </div>
           <h1

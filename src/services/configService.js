@@ -155,3 +155,86 @@ export async function loadFolders(userId) {
   }
   return data?.folders ?? [];
 }
+
+/**
+ * Persist the default folder name for userId inside the `extra` JSONB column.
+ * Uses a targeted upsert so it doesn't clobber other columns.
+ */
+export async function saveDefaultFolderName(name, userId) {
+  // Read current extra first so we don't overwrite other keys
+  const { data } = await supabase
+    .from("ideation_config")
+    .select("extra")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const extra = { ...(data?.extra ?? {}), defaultFolderName: name };
+
+  const { error } = await supabase
+    .from("ideation_config")
+    .upsert({ user_id: userId, extra }, { onConflict: "user_id" });
+
+  if (error) {
+    console.error(
+      "[configService] saveDefaultFolderName error:",
+      error.message,
+    );
+  }
+}
+
+/** Load the default folder name saved for userId. Returns null if not set. */
+export async function loadDefaultFolderName(userId) {
+  const { data, error } = await supabase
+    .from("ideation_config")
+    .select("extra")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "[configService] loadDefaultFolderName error:",
+      error.message,
+    );
+    return null;
+  }
+  return data?.extra?.defaultFolderName ?? null;
+}
+
+/**
+ * Load all extra fields at once (single DB read).
+ * Returns the full `extra` JSONB object, or {} on error.
+ */
+export async function loadExtraFields(userId) {
+  const { data, error } = await supabase
+    .from("ideation_config")
+    .select("extra")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[configService] loadExtraFields error:", error.message);
+    return {};
+  }
+  return data?.extra ?? {};
+}
+
+/**
+ * Persist the thinkingNoteIds array for userId inside the `extra` JSONB column.
+ */
+export async function saveThinkingNoteIds(ids, userId) {
+  const { data } = await supabase
+    .from("ideation_config")
+    .select("extra")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const extra = { ...(data?.extra ?? {}), thinkingNoteIds: ids };
+
+  const { error } = await supabase
+    .from("ideation_config")
+    .upsert({ user_id: userId, extra }, { onConflict: "user_id" });
+
+  if (error) {
+    console.error("[configService] saveThinkingNoteIds error:", error.message);
+  }
+}

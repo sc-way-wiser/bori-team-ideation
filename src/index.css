@@ -20,9 +20,10 @@
   --color-on-primary: #6b5200;
 
   --color-danger: #dc2626;
+  --table-border-color: #e8e3d6;
 }
 
-/* ── Evening theme (after 7pm local time) ─────────────────────── */
+/* ── Evening theme (after 7pm local time) ─────────────────────────────── */
 [data-evening] {
   --color-background: #1c1917;
   --color-surface: #27211e;
@@ -41,6 +42,9 @@
   --color-primary-dk: #fef3c7;
   --color-primary-bg: rgba(235, 208, 94, 0.15);
   --color-on-primary: #6b5200;
+
+  --color-danger: #dc2626;
+  --table-border-color: #3a3632;
 }
 
 *,
@@ -257,7 +261,7 @@ body,
 .tiptap table td {
   position: relative;
   border: 1px var(--table-border-style, solid)
-    var(--table-border-color, #f5f5f4);
+    var(--table-border-color, #e8e3d6);
   padding: 0.35rem 0.65rem;
   vertical-align: top;
   min-width: 80px;
@@ -266,7 +270,6 @@ body,
   font-weight: normal;
 }
 .tiptap table th {
-  background: transparent;
   color: var(--color-primary-dk);
   text-align: left;
 }
@@ -275,7 +278,7 @@ body,
   background: rgba(99, 102, 241, 0.25) !important;
   outline: 2px solid rgba(99, 102, 241, 0.7);
   outline-offset: -2px;
-  border-color: #d6d3d1;
+  border-color: var(--table-border-color);
 }
 
 /* ── Mention chip ─────────────────────────────────────────────── */
@@ -286,6 +289,7 @@ body,
 
 /* ── Table column resize handle ──────────────────────────────── */
 .tiptap .tableWrapper {
+  position: relative;
   overflow-x: auto;
   overflow-y: visible;
 }

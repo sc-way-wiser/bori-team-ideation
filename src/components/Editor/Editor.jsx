@@ -59,9 +59,11 @@ import {
   CheckIcon,
   LightbulbIcon,
   LockSimpleIcon,
+  MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { useBrowser } from "../../hooks/useBrowserDetect.jsx";
 import Select from "../ui/Select.jsx";
+import BottomSheet from "../ui/BottomSheet.jsx";
 
 /* ─── Fetch link metadata via CORS proxy ─────────────────────────────────── */
 async function fetchLinkMeta(href) {
@@ -864,7 +866,7 @@ const ToolbarButton = ({ onClick, title, isActive, children }) => (
     title={title}
     className={`p-2 rounded transition-colors ${
       isActive
-        ? "bg-(--color-primary) text-(--color-primary-dk) font-semibold"
+        ? "bg-(--color-primary) text-(--color-on-primary) font-semibold"
         : "text-(--color-text-sec) hover:text-(--color-text) hover:bg-(--color-hover)"
     }`}
   >
@@ -878,7 +880,7 @@ const TableToolbarButton = ({ onClick, title, danger, children }) => (
     title={title}
     className={`flex items-center px-2.5 py-1 rounded text-xs transition-colors ${
       danger
-        ? "text-red-500 hover:text-red-600 hover:bg-red-50"
+        ? "text-red-500 hover:text-red-600 hover:bg-(--color-primary-bg)"
         : "text-(--color-primary-dk) hover:bg-(--color-primary-bg)"
     }`}
   >
@@ -897,6 +899,8 @@ const NoteEditor = ({ noteId, onNavigate }) => {
     deleteNote,
     addTag,
     removeTag,
+    addLinkedNote,
+    removeLinkedNote,
     notes,
     currentUserId,
     pendingShareNoteId,
@@ -916,13 +920,35 @@ const NoteEditor = ({ noteId, onNavigate }) => {
   const isUpdating = useRef(false);
   const [tagInput, setTagInput] = useState("");
   const [isInTable, setIsInTable] = useState(false);
+  const [activeTableWrapper, setActiveTableWrapper] = useState(null);
   const [activeFontSize, setActiveFontSize] = useState("");
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkPickerSelected, setLinkPickerSelected] = useState(new Set());
+  const linkPickerRef = useRef(null);
+  const linkBtnRef = useRef(null);
   const [tableBorderColor, setTableBorderColor] = useState("stone-100");
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAnchor, setShareAnchor] = useState(null);
   const [linkBubble, setLinkBubble] = useState({ open: false, url: "" });
   const linkInputRef = useRef(null);
   const linkBubbleRef = useRef(null);
+
+  // Dismiss link picker popover on outside click (desktop)
+  useEffect(() => {
+    if (!linkPickerOpen || isMobile) return;
+    const handler = (e) => {
+      if (
+        linkPickerRef.current &&
+        !linkPickerRef.current.contains(e.target) &&
+        linkBtnRef.current &&
+        !linkBtnRef.current.contains(e.target)
+      )
+        setLinkPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [linkPickerOpen, isMobile]);
 
   // Dismiss link bubble on outside click
   useEffect(() => {
@@ -1059,11 +1085,45 @@ const NoteEditor = ({ noteId, onNavigate }) => {
       if (isUpdating.current) return;
       updateNote(noteId, { content: ed.getHTML() });
     },
-    onSelectionUpdate: ({ editor: ed }) => {
-      setIsInTable(ed.isActive("table"));
+    onTransaction: ({ editor: ed }) => {
+      const inTable = ed.isActive("table");
+      setIsInTable(inTable);
+      if (!inTable) {
+        setActiveTableWrapper(null);
+      } else {
+        // Resolve wrapper for both click and keyboard navigation
+        try {
+          const domNode = ed.view.domAtPos(ed.state.selection.$from.pos).node;
+          const el =
+            domNode instanceof Element ? domNode : domNode.parentElement;
+          const tw = el?.closest?.(".tableWrapper");
+          if (tw) setActiveTableWrapper(tw);
+        } catch (e) {
+          void e;
+        }
+      }
       setActiveFontSize(ed.getAttributes("textStyle").fontSize ?? "");
     },
   });
+
+  /* Show table toolbar when clicking anywhere on/in a table (incl. border area).
+     .tableWrapper is the div TipTap wraps every table in — it captures clicks
+     on outer borders that never land on a th/td and don't move the cursor. */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e) => {
+      const tw = e.target.closest(".tableWrapper");
+      if (tw) {
+        setActiveTableWrapper(tw);
+        setIsInTable(true);
+      } else if (!e.target.closest(".ProseMirror table")) {
+        if (!editor?.isActive("table")) setIsInTable(false);
+      }
+    };
+    el.addEventListener("mousedown", handler);
+    return () => el.removeEventListener("mousedown", handler);
+  }, [editor]);
 
   /* Sync editor content when noteId changes */
   useEffect(() => {
@@ -1171,6 +1231,38 @@ const NoteEditor = ({ noteId, onNavigate }) => {
 
   const linkedNotes =
     note.linkedNoteIds?.map((id) => getNoteById(id)).filter(Boolean) ?? [];
+
+  // Notes in the same folder available to link (excludes self + already linked)
+  const linkedIds = new Set(note.linkedNoteIds ?? []);
+  const folderNotes = notes.filter(
+    (n) =>
+      n.id !== noteId &&
+      !linkedIds.has(n.id) &&
+      (n.folderId === note.folderId || (!n.folderId && !note.folderId)),
+  );
+  const filteredFolderNotes = linkSearch.trim()
+    ? folderNotes.filter((n) =>
+        n.title.toLowerCase().includes(linkSearch.toLowerCase()),
+      )
+    : folderNotes;
+
+  const openLinkPicker = () => {
+    setLinkSearch("");
+    setLinkPickerSelected(new Set());
+    setLinkPickerOpen(true);
+  };
+
+  const confirmLinkPicker = () => {
+    linkPickerSelected.forEach((id) => addLinkedNote(noteId, id));
+    setLinkPickerOpen(false);
+  };
+
+  const togglePickerNote = (id) =>
+    setLinkPickerSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   /* ── Render ── */
 
@@ -1412,15 +1504,6 @@ const NoteEditor = ({ noteId, onNavigate }) => {
             <span className="text-xs ml-1">Del Row</span>
           </TableToolbarButton>
           <div className="w-px h-4 bg-(--color-border) mx-0.5 shrink-0" />
-          <TableToolbarButton
-            onClick={() => editor?.chain().focus().deleteTable().run()}
-            title="Delete entire table"
-            danger
-          >
-            <Trash2Icon size={18} />
-            <span className="text-xs ml-1">Del Table</span>
-          </TableToolbarButton>
-          <div className="w-px h-4 bg-(--color-border) mx-0.5 shrink-0" />
           {/* Border colour buttons */}
           <span className="text-xs text-(--color-text-muted) mr-1 shrink-0">
             Border:
@@ -1473,6 +1556,24 @@ const NoteEditor = ({ noteId, onNavigate }) => {
           />
         </div>
       )}
+
+      {/* ── Floating table delete button — portalled into the active tableWrapper ── */}
+      {activeTableWrapper &&
+        ReactDOM.createPortal(
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor?.chain().focus().deleteTable().run();
+              setIsInTable(false);
+              setActiveTableWrapper(null);
+            }}
+            title="Delete table"
+            className="absolute top-1 right-1 z-50 w-7 h-7 flex items-center justify-center rounded-md bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:bg-red-50 hover:border-red-300 hover:text-red-500 shadow-sm transition-colors"
+          >
+            <Trash2Icon size={14} />
+          </button>,
+          activeTableWrapper,
+        )}
 
       {/* ── Editor area ── */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-6 pb-20">
@@ -1666,26 +1767,212 @@ const NoteEditor = ({ noteId, onNavigate }) => {
         />
 
         {/* Linked notes */}
-        {linkedNotes.length > 0 && (
-          <div className="mt-8 border-t border-(--color-border-lt) pt-4">
-            <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider mb-2">
+        <div className="mt-8 border-t border-(--color-border-lt) pt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider flex-1">
               Linked Notes
             </p>
+            {canEdit && (
+              <button
+                ref={linkBtnRef}
+                onClick={openLinkPicker}
+                className="flex items-center gap-1 text-xs px-2 py-3 rounded-full border border-(--color-border) text-(--color-text-muted) hover:border-(--color-primary) hover:text-(--color-primary-dk) transition-colors"
+              >
+                <PlusIcon size={11} weight="bold" /> Link notes
+              </button>
+            )}
+          </div>
+          {linkedNotes.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {linkedNotes.map((ln) =>
                 ln ? (
-                  <button
-                    key={ln.id}
-                    onClick={() => onNavigate(ln.id)}
-                    className="flex items-center gap-1 text-sm text-(--color-primary-dk) hover:bg-(--color-primary-bg) border border-(--color-border) px-3 py-1 rounded-full transition-colors"
-                  >
-                    <ArrowRightIcon size={12} /> {ln.title}
-                  </button>
+                  <div key={ln.id} className="flex items-center gap-0.5 group">
+                    <button
+                      onClick={() => onNavigate(ln.id)}
+                      className="flex items-center gap-1 text-sm text-(--color-primary-dk) hover:bg-(--color-primary-bg) border border-(--color-border) pl-3 pr-2 py-1 rounded-full transition-colors"
+                    >
+                      <ArrowRightIcon size={12} /> {ln.title}
+                    </button>
+                    {canEdit && (
+                      <button
+                        onClick={() => removeLinkedNote(noteId, ln.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded-full text-(--color-text-muted) opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all"
+                        title="Remove link"
+                      >
+                        <XIcon size={11} weight="bold" />
+                      </button>
+                    )}
+                  </div>
                 ) : null,
               )}
             </div>
+          )}
+        </div>
+
+        {/* ── Link picker — desktop popover ── */}
+        {linkPickerOpen && !isMobile && (
+          <div
+            ref={linkPickerRef}
+            className="fixed z-50 w-72 rounded-xl shadow-xl border border-(--color-border) bg-(--color-surface) flex flex-col overflow-hidden"
+            style={(() => {
+              const rect = linkBtnRef.current?.getBoundingClientRect();
+              if (!rect) return {};
+              return {
+                bottom: window.innerHeight - rect.top + 8,
+                left: rect.left,
+              };
+            })()}
+          >
+            <div className="flex items-center gap-2 px-3 py-4 border-b border-(--color-border)">
+              <MagnifyingGlassIcon
+                size={14}
+                className="text-(--color-text-muted) shrink-0"
+              />
+              <input
+                autoFocus
+                value={linkSearch}
+                onChange={(e) => setLinkSearch(e.target.value)}
+                placeholder="Search notes…"
+                className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
+              />
+              <button
+                onClick={() => setLinkPickerOpen(false)}
+                className="text-(--color-text-muted) hover:text-(--color-text)"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-52 py-4">
+              {filteredFolderNotes.length === 0 ? (
+                <p className="text-xs text-(--color-text-muted) text-center py-4">
+                  No notes found
+                </p>
+              ) : (
+                filteredFolderNotes.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => togglePickerNote(n.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                      linkPickerSelected.has(n.id)
+                        ? "bg-(--color-primary-bg) text-(--color-primary-dk)"
+                        : "text-(--color-text) hover:bg-(--color-hover)"
+                    }`}
+                  >
+                    <span
+                      className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors ${
+                        linkPickerSelected.has(n.id)
+                          ? "bg-(--color-primary) border-(--color-primary)"
+                          : "border-(--color-border)"
+                      }`}
+                    >
+                      {linkPickerSelected.has(n.id) && (
+                        <CheckIcon
+                          size={10}
+                          weight="bold"
+                          className="text-(--color-on-primary)"
+                        />
+                      )}
+                    </span>
+                    <span className="truncate">{n.title}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="px-3 py-2.5 border-t border-(--color-border) flex justify-end gap-2">
+              <button
+                onClick={() => setLinkPickerOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-lg text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={confirmLinkPicker}
+                disabled={linkPickerSelected.size === 0}
+                className="text-xs px-5 py-3 rounded-full bg-(--color-primary) text-(--color-on-primary) font-semibold disabled:opacity-40 hover:bg-(--color-primary-hv) transition-colors"
+              >
+                확인
+              </button>
+            </div>
           </div>
         )}
+
+        {/* ── Link picker — mobile bottom sheet ── */}
+        <BottomSheet
+          isOpen={linkPickerOpen && isMobile}
+          onClose={() => setLinkPickerOpen(false)}
+          title="Link notes"
+          showHeader
+          maxHeight="70vh"
+          hideActions
+        >
+          <div className="flex flex-col gap-0 pb-4">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-(--color-border)">
+              <MagnifyingGlassIcon
+                size={15}
+                className="text-(--color-text-muted) shrink-0"
+              />
+              <input
+                autoFocus
+                value={linkSearch}
+                onChange={(e) => setLinkSearch(e.target.value)}
+                placeholder="Search notes…"
+                className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none py-1"
+              />
+            </div>
+            <div className="overflow-y-auto flex-1 py-1">
+              {filteredFolderNotes.length === 0 ? (
+                <p className="text-sm text-(--color-text-muted) text-center py-6">
+                  No notes found
+                </p>
+              ) : (
+                filteredFolderNotes.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => togglePickerNote(n.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors ${
+                      linkPickerSelected.has(n.id)
+                        ? "bg-(--color-primary-bg) text-(--color-primary-dk)"
+                        : "text-(--color-text) hover:bg-(--color-hover)"
+                    }`}
+                  >
+                    <span
+                      className={`w-5 h-5 shrink-0 rounded border flex items-center justify-center transition-colors ${
+                        linkPickerSelected.has(n.id)
+                          ? "bg-(--color-primary) border-(--color-primary)"
+                          : "border-(--color-border)"
+                      }`}
+                    >
+                      {linkPickerSelected.has(n.id) && (
+                        <CheckIcon
+                          size={11}
+                          weight="bold"
+                          className="text-(--color-on-primary)"
+                        />
+                      )}
+                    </span>
+                    <span className="truncate flex-1">{n.title}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="px-4 pt-3 flex gap-3">
+              <button
+                onClick={() => setLinkPickerOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-(--color-border) text-sm text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={confirmLinkPicker}
+                disabled={linkPickerSelected.size === 0}
+                className="flex-1 py-3 rounded-full bg-(--color-primary) text-(--color-on-primary) text-sm font-semibold disabled:opacity-40 hover:bg-(--color-primary-hv) transition-colors"
+              >
+                확인{" "}
+                {linkPickerSelected.size > 0 && `(${linkPickerSelected.size})`}
+              </button>
+            </div>
+          </div>
+        </BottomSheet>
       </div>
 
       {/* ── Thinking toggle — owner only ── */}

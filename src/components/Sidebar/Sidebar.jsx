@@ -21,6 +21,7 @@ import {
   LockSimpleIcon,
   PencilSimpleIcon as EditIcon,
   LinkSimpleIcon,
+  LightbulbIcon,
 } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { useNoteStore } from "../../store/useNoteStore.js";
@@ -279,7 +280,9 @@ const NoteRow = ({
     setActiveNote,
     currentUserId,
     requestEditAccess,
+    thinkingNoteIds,
   } = useNoteStore();
+  const isThinking = thinkingNoteIds.includes(note.id);
   const isOwner = note.ownerId === currentUserId;
   const hasEditAccess = (note.editAccess ?? []).includes(currentUserId);
   const hasRequested = (note.editRequests ?? []).includes(currentUserId);
@@ -414,6 +417,13 @@ const NoteRow = ({
             )}
           </div>
         </button>
+
+        {/* Thinking indicator */}
+        {isThinking && (
+          <span className="shrink-0 p-1 text-(--color-primary-dk)">
+            <LightbulbIcon size={16} weight="fill" />
+          </span>
+        )}
 
         {/* Linked indicator */}
         {isLinked && (
@@ -1275,7 +1285,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
             setBulkShareAnchor(rect ?? null);
             setBulkShareOpen((v) => !v);
           }}
-          className="absolute bottom-5 right-4 flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-primary-dk) text-white text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity z-20"
+          className="absolute bottom-5 right-4 flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-on-primary) text-white text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity z-20"
         >
           <ShareNetworkIcon size={15} weight="bold" />
           Share {selectedNoteIds.size}

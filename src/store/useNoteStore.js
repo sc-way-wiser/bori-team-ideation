@@ -10,7 +10,13 @@ import {
   patchNoteFolder as dbPatchFolder,
   patchNoteSharing as dbPatchSharing,
 } from "../services/noteService.js";
-import { saveFolders, loadFolders } from "../services/configService.js";
+import {
+  saveFolders,
+  loadFolders,
+  saveDefaultFolderName,
+  loadExtraFields,
+  saveThinkingNoteIds,
+} from "../services/configService.js";
 
 // Debounce map: noteId → timeout handle
 // Prevents hammering Supabase on every keystroke
@@ -52,6 +58,17 @@ export const useNoteStore = create(
         if (user?.id) {
           const remoteFolders = await loadFolders(user.id);
           if (remoteFolders.length > 0) set({ folders: remoteFolders });
+
+          // Load the persisted extra fields (defaultFolderName, thinkingNoteIds) in one read
+          const extra = await loadExtraFields(user.id);
+          if (extra.defaultFolderName)
+            set({ defaultFolderName: extra.defaultFolderName });
+          if (
+            Array.isArray(extra.thinkingNoteIds) &&
+            extra.thinkingNoteIds.length > 0
+          ) {
+            set({ thinkingNoteIds: extra.thinkingNoteIds });
+          }
         }
         if (remote.length > 0) {
           // ── Merge local folderId/folderName into DB rows ───────────────────
@@ -501,6 +518,67 @@ export const useNoteStore = create(
           (n) => n.folderId === null && n.ownerId === get().currentUserId,
         );
         defaultNotes.forEach((n) => dbPatchFolder(n.id, null, name));
+        // Persist the name itself so it loads consistently on any device
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user?.id) saveDefaultFolderName(name, user.id);
+        });
+      },
+
+      /** Directly links two notes (bidirectional strong relationship) */
+      addLinkedNote: (noteId, targetId) => {
+        if (noteId === targetId) return;
+        let updatedA, updatedB;
+        set((state) => ({
+          notes: state.notes.map((n) => {
+            if (n.id === noteId && !n.linkedNoteIds.includes(targetId)) {
+              updatedA = {
+                ...n,
+                linkedNoteIds: [...n.linkedNoteIds, targetId],
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedA;
+            }
+            if (n.id === targetId && !n.linkedNoteIds.includes(noteId)) {
+              updatedB = {
+                ...n,
+                linkedNoteIds: [...n.linkedNoteIds, noteId],
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedB;
+            }
+            return n;
+          }),
+        }));
+        if (updatedA) scheduleUpsert(updatedA, 300);
+        if (updatedB) scheduleUpsert(updatedB, 300);
+      },
+
+      /** Removes a direct link between two notes (bidirectional) */
+      removeLinkedNote: (noteId, targetId) => {
+        let updatedA, updatedB;
+        set((state) => ({
+          notes: state.notes.map((n) => {
+            if (n.id === noteId) {
+              updatedA = {
+                ...n,
+                linkedNoteIds: n.linkedNoteIds.filter((id) => id !== targetId),
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedA;
+            }
+            if (n.id === targetId) {
+              updatedB = {
+                ...n,
+                linkedNoteIds: n.linkedNoteIds.filter((id) => id !== noteId),
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedB;
+            }
+            return n;
+          }),
+        }));
+        if (updatedA) scheduleUpsert(updatedA, 300);
+        if (updatedB) scheduleUpsert(updatedB, 300);
       },
 
       getNoteById: (id) => get().notes.find((n) => n.id === id),
@@ -550,12 +628,17 @@ export const useNoteStore = create(
         );
       },
 
-      toggleThinking: (id) =>
+      toggleThinking: (id) => {
         set((state) => ({
           thinkingNoteIds: state.thinkingNoteIds.includes(id)
             ? state.thinkingNoteIds.filter((x) => x !== id)
             : [...state.thinkingNoteIds, id],
-        })),
+        }));
+        // Persist to Supabase so the toggle syncs across devices
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user?.id) saveThinkingNoteIds(get().thinkingNoteIds, user.id);
+        });
+      },
 
       getNotesByTag: (tag) => get().notes.filter((n) => n.tags.includes(tag)),
 
