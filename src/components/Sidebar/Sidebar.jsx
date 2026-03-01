@@ -1171,6 +1171,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
     createFolder,
     deleteFolder,
     renameFolder,
+    deleteNote,
     moveNoteToFolder,
     currentUserId,
     defaultFolderName,
@@ -1183,6 +1184,8 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
   const [activeTag, setActiveTag] = useState(null);
   const [dragOverFolder, setDragOverFolder] = useState(null);
   const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
+  const [bulkDeleteArmed, setBulkDeleteArmed] = useState(false);
+  const bulkDeleteArmTimer = useRef(null);
   const [bulkShareOpen, setBulkShareOpen] = useState(false);
   const [bulkShareAnchor, setBulkShareAnchor] = useState(null);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
@@ -1580,6 +1583,38 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
       {/* Floating bulk action buttons */}
       {selectedNoteIds.size > 0 && (
         <div className="absolute bottom-5 right-4 flex items-center gap-2 z-20">
+          {/* Bulk delete — two-click confirm */}
+          <button
+            onClick={() => {
+              if (!bulkDeleteArmed) {
+                setBulkDeleteArmed(true);
+                clearTimeout(bulkDeleteArmTimer.current);
+                bulkDeleteArmTimer.current = setTimeout(
+                  () => setBulkDeleteArmed(false),
+                  3000,
+                );
+              } else {
+                clearTimeout(bulkDeleteArmTimer.current);
+                // Only delete own notes
+                [...selectedNoteIds].forEach((id) => {
+                  const note = notes.find((n) => n.id === id);
+                  if (note?.ownerId === currentUserId) deleteNote(id);
+                });
+                setSelectedNoteIds(new Set());
+                setBulkDeleteArmed(false);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold shadow-lg transition-colors ${
+              bulkDeleteArmed
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "bg-(--color-surface) border border-(--color-border) text-red-500 hover:bg-(--color-hover)"
+            }`}
+          >
+            <Trash2Icon size={15} weight="bold" />
+            {bulkDeleteArmed
+              ? `Confirm delete ${selectedNoteIds.size}?`
+              : `${selectedNoteIds.size}`}
+          </button>
           <button
             ref={moveFloatRef}
             onClick={() => {
@@ -1591,7 +1626,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
             className="flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-surface) border border-(--color-border) text-(--color-text) text-xs font-semibold shadow-lg hover:bg-(--color-hover) transition-colors"
           >
             <FolderIcon size={15} weight="bold" />
-            Move {selectedNoteIds.size}
+            {selectedNoteIds.size}
           </button>
           <button
             ref={shareFloatRef}
@@ -1601,10 +1636,10 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
               setBulkShareOpen((v) => !v);
               setBulkMoveOpen(false);
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full bg-(--color-on-primary) text-white text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2 px-3 py-2 rounded-full border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover) text-(--color-on-primary) text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity"
           >
             <ShareNetworkIcon size={15} weight="bold" />
-            Share {selectedNoteIds.size}
+            {selectedNoteIds.size}
           </button>
         </div>
       )}
@@ -1628,6 +1663,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
               moveNoteToFolder(id, folderId),
             );
             setSelectedNoteIds(new Set());
+            setBulkDeleteArmed(false);
             setBulkMoveOpen(false);
             setBulkMoveAnchor(null);
           }}
