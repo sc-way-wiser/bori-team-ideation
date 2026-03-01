@@ -226,6 +226,22 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
   const containerRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const fitDone = useRef(false);
+  const [isEvening, setIsEvening] = useState(() =>
+    document.documentElement.hasAttribute("data-evening"),
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsEvening(document.documentElement.hasAttribute("data-evening"));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-evening"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const graphBg = isEvening ? "#1c1917" : "#ffffff";
 
   // Stable folder scope — only changes when active note moves to a different folder.
   // Switching notes within the same folder must NOT update this, so graphData stays
@@ -376,7 +392,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
       fgRef.current?.zoomToFit(400, padding);
     }, 520); // wait for 480ms CSS transition + small buffer
     return () => clearTimeout(timer);
-  }, [fitTrigger, dims.width, graphData.nodes.length]);
+  }, [fitTrigger, dims.width, graphData.nodes.length, isMobile]);
 
   // Reset fit flag whenever graphData changes
   useEffect(() => {
@@ -395,7 +411,9 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
       const isHovered = id === hoveredId;
       const isThinking =
         node.ownerId === currentUserId && thinkingNoteIds.includes(id);
-      const r = Math.max(1.5, Math.sqrt(val) * 1.5);
+      const r = isMobile
+        ? Math.max(3, Math.sqrt(val) * 3.5)
+        : Math.max(1.5, Math.sqrt(val) * 1.5);
       const fillColor = isActive
         ? "#ebd05e"
         : isHovered
@@ -434,16 +452,29 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
       }
 
       if (globalScale >= 0.5 || isHovered || isActive) {
-        const fs = Math.max(5, Math.min(8, 7 / globalScale));
+        const fs = isMobile
+          ? Math.max(8, Math.min(14, 12 / globalScale))
+          : Math.max(5, Math.min(8, 7 / globalScale));
         ctx.font = `${isActive ? "700" : "400"} ${fs}px Inter, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         const label = name.length > 24 ? name.slice(0, 22) + "…" : name;
-        ctx.fillStyle = isActive ? "#0c0a09" : "#a8a29e";
+        ctx.fillStyle = isActive
+          ? isEvening
+            ? "#fef3c7"
+            : "#0c0a09"
+          : "#a8a29e";
         ctx.fillText(label, x, y + r + 3);
       }
     },
-    [activeNoteId, hoveredId, thinkingNoteIds, currentUserId],
+    [
+      activeNoteId,
+      hoveredId,
+      thinkingNoteIds,
+      currentUserId,
+      isMobile,
+      isEvening,
+    ],
   );
 
   const paintLink = useCallback((link, ctx) => {
@@ -492,11 +523,12 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
   useEffect(() => {
     if (!fgRef.current) return;
     // Moderate repulsion — keeps nodes from overlapping
+    // On mobile: less repulsion + shorter link distance so nodes cluster closer
     const charge = fgRef.current.d3Force("charge");
-    if (charge) charge.strength(-30);
+    if (charge) charge.strength(isMobile ? -12 : -30);
     // Soft link springs — easy to deform manually
     const link = fgRef.current.d3Force("link");
-    if (link) link.distance(50).strength(0.3);
+    if (link) link.distance(isMobile ? 10 : 50).strength(0.3);
     // Very gentle gravity — just enough to keep isolated nodes nearby,
     // but weak enough that manual drags stick
     fgRef.current.d3Force("x", forceX(0).strength(0.02));
@@ -504,7 +536,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     // Disable the default center force — it fights with forceX/forceY
     fgRef.current.d3Force("center", null);
     fgRef.current.d3ReheatSimulation?.();
-  }, [graphData]);
+  }, [graphData, isMobile]);
 
   const handleNodeClick = useCallback(
     (node) => {
@@ -519,14 +551,14 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
 
   return (
     <div
-      className="flex-1 flex flex-col h-full"
-      style={{ background: "#f9f7f0" }}
+      className="flex-1 flex flex-col h-full bg-(--color-background)"
+      // style={{ background: "#f9f7f0" }}
     >
       {/* Canvas */}
       <div
         ref={containerRef}
         className="flex-1 relative overflow-hidden"
-        style={{ lineHeight: 0, background: "#f9f7f0" }}
+        style={{ lineHeight: 0, background: graphBg }}
       >
         {graphData.nodes.length === 0 ? (
           <div
@@ -556,7 +588,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
             linkCanvasObject={paintLink}
             linkCanvasObjectMode={() => "replace"}
             linkColor={() => "transparent"}
-            backgroundColor="#f9f7f0"
+            backgroundColor={graphBg}
             onNodeClick={handleNodeClick}
             onNodeHover={handleNodeHover}
             onNodeDragEnd={(node) => {

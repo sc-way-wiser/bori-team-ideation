@@ -1177,10 +1177,10 @@ const NoteEditor = ({ noteId, onNavigate }) => {
   return (
     <div
       ref={containerRef}
-      className="flex-1 flex flex-col h-full overflow-hidden bg-white relative"
+      className="flex-1 flex flex-col h-full overflow-hidden bg-(--color-background) relative"
     >
       {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center gap-0.5 px-3 py-3 border-b border-(--color-border) bg-(--color-toolbar) shrink-0">
+      <div className="flex flex-wrap items-center gap-0.5 px-3 py-3 border-b border-(--color-border) bg-(--color-background) shrink-0">
         <ToolbarButton
           onClick={() => editor?.chain().focus().toggleBold().run()}
           title="Bold"
@@ -1361,7 +1361,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
 
       {/* Grid toolbar — shown when cursor is inside a table */}
       {isInTable && (
-        <div className="flex flex-wrap items-center gap-0.5 px-3 py-3 border-b border-(--color-border) bg-(--color-surface) shrink-0">
+        <div className="flex flex-wrap items-center gap-0.5 px-3 py-3 border-b border-(--color-border) bg-(--color-background) shrink-0">
           <span className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider mr-2 shrink-0">
             Grid
           </span>
@@ -1478,7 +1478,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-6 pb-20">
         {/* Read-only banner */}
         {!canEdit && (
-          <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-(--color-input) border border-(--color-border) text-xs text-(--color-text-muted)">
+          <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-(--color-background) border border-(--color-border) text-xs text-(--color-text-muted)">
             <LockSimpleIcon size={14} className="shrink-0" />
             <span className="flex-1">
               This note is <strong>read-only</strong>. You can request edit
@@ -1695,14 +1695,14 @@ const NoteEditor = ({ noteId, onNavigate }) => {
           title={
             thinkingNoteIds.includes(noteId) ? "Stop thinking" : "I am thinking"
           }
-          className={`absolute bottom-20 right-6 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
+          className={`absolute bottom-20 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
             thinkingNoteIds.includes(noteId)
-              ? "bg-amber-400 text-amber-900 shadow-amber-200"
+              ? "bg-(--color-primary) text-(--color-on-primary) shadow-amber-200"
               : "bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:border-amber-400 hover:text-amber-400"
           }`}
         >
           <LightbulbIcon
-            size={22}
+            size={24}
             weight={thinkingNoteIds.includes(noteId) ? "fill" : "regular"}
           />
         </button>

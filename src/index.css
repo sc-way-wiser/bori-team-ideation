@@ -17,8 +17,30 @@
   --color-primary-hv: #d9be4a;
   --color-primary-dk: #6b5200;
   --color-primary-bg: rgba(235, 208, 94, 0.18);
+  --color-on-primary: #6b5200;
 
   --color-danger: #dc2626;
+}
+
+/* ── Evening theme (after 7pm local time) ─────────────────────── */
+[data-evening] {
+  --color-background: #1c1917;
+  --color-surface: #27211e;
+  --color-toolbar: #211d1a;
+  --color-input: #2e2825;
+  --color-hover: #3a3330;
+  --color-border: #44403c;
+  --color-border-lt: #3a3632;
+
+  --color-text: #e7e3dc;
+  --color-text-sec: #a8a29e;
+  --color-text-muted: #78716c;
+
+  --color-primary: #ebd05e;
+  --color-primary-hv: #d9be4a;
+  --color-primary-dk: #fef3c7;
+  --color-primary-bg: rgba(235, 208, 94, 0.15);
+  --color-on-primary: #6b5200;
 }
 
 *,

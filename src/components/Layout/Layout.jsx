@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useBrowser } from "../../hooks/useBrowserDetect.jsx";
 import {
   ShareNetworkIcon as NetworkIcon,
   PlusIcon,
@@ -30,6 +31,7 @@ const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { loadConfig } = useConfigStore();
+  const { isMobile } = useBrowser();
 
   useEffect(() => {
     loadNotes();
@@ -54,10 +56,12 @@ const Layout = () => {
     setSidebarOpen(false);
   };
 
+  console.log("user", user);
+
   return (
     <div className="h-screen flex flex-col bg-(--color-background) text-(--color-text) overflow-hidden max-w-720 mx-auto">
       {/* Top Navbar */}
-      <header className="flex items-center gap-2 px-3 py-2 bg-(--color-toolbar) border-b border-(--color-border) shrink-0 shadow-sm">
+      <header className="flex items-center gap-2 px-3 py-2 bg-(--color-background) border-b border-(--color-border) shrink-0 shadow-sm">
         <button
           className="md:hidden p-1.5 rounded text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
           onClick={() => setSidebarOpen((v) => !v)}
@@ -84,11 +88,11 @@ const Layout = () => {
           }}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
             showGraph
-              ? "bg-(--color-primary) text-(--color-text)"
+              ? "bg-(--color-primary) text-(--color-on-primary)"
               : "bg-(--color-input) text-(--color-text-sec) hover:bg-(--color-hover)"
           }`}
         >
-          <NetworkIcon size={16} />
+          <NetworkIcon size={18} />
           <span className="hidden sm:inline">Graph View</span>
         </button>
 
@@ -116,10 +120,24 @@ const Layout = () => {
           <div className="flex items-center gap-1.5 ml-1">
             {user.user_metadata?.avatar_url ? (
               <img
-                src={user.user_metadata.avatar_url}
+                src={
+                  user.user_metadata.avatar_url ?? user.user_metadata?.picture
+                }
                 alt={user.user_metadata?.full_name ?? "User"}
                 className="w-7 h-7 rounded-full object-cover border border-(--color-border)"
                 title={user.email ?? ""}
+                onError={() => (
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{
+                      backgroundColor: "var(--color-primary)",
+                      color: "var(--color-primary-dk)",
+                    }}
+                    title={user.email ?? ""}
+                  >
+                    {(user.email ?? "U")[0].toUpperCase()}
+                  </div>
+                )}
               />
             ) : (
               <div
@@ -176,7 +194,7 @@ const Layout = () => {
 
         <div
           className={`
-            fixed inset-y-0 left-0 z-30 w-75 transition-transform duration-200
+            fixed inset-y-0 left-0 z-30 w-full transition-transform duration-200
             md:relative md:flex md:w-75 md:min-w-75 md:translate-x-0 md:z-auto
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
           `}
@@ -198,8 +216,14 @@ const Layout = () => {
               <div
                 className="flex overflow-hidden min-w-0"
                 style={{
-                  flex: showGraph && graphExpanded ? "0 0 0px" : "1 1 0%",
-                  width: showGraph && graphExpanded ? 0 : undefined,
+                  flex:
+                    (showGraph && graphExpanded) || (isMobile && showGraph)
+                      ? "0 0 0px"
+                      : "1 1 0%",
+                  width:
+                    (showGraph && graphExpanded) || (isMobile && showGraph)
+                      ? 0
+                      : undefined,
                   transition:
                     "flex 480ms cubic-bezier(0.4,0,0.2,1), width 480ms cubic-bezier(0.4,0,0.2,1)",
                 }}
@@ -207,10 +231,16 @@ const Layout = () => {
                 <div
                   className="flex-1 flex min-w-0 overflow-hidden"
                   style={{
-                    opacity: showGraph && graphExpanded ? 0 : 1,
-                    pointerEvents: showGraph && graphExpanded ? "none" : "auto",
+                    opacity:
+                      (showGraph && graphExpanded) || (isMobile && showGraph)
+                        ? 0
+                        : 1,
+                    pointerEvents:
+                      (showGraph && graphExpanded) || (isMobile && showGraph)
+                        ? "none"
+                        : "auto",
                     transition:
-                      showGraph && graphExpanded
+                      (showGraph && graphExpanded) || (isMobile && showGraph)
                         ? "opacity 180ms ease" // collapse: fade out quickly
                         : "opacity 280ms ease 220ms", // expand: delayed so frame grows first
                   }}
@@ -230,25 +260,27 @@ const Layout = () => {
                 <div
                   className="flex flex-1 lg:flex-none h-full border-l border-(--color-border) relative"
                   style={{
-                    width: graphExpanded ? "100%" : "50vw",
+                    width: graphExpanded || isMobile ? "100%" : "50vw",
                     transition: "width 480ms cubic-bezier(0.4,0,0.2,1)",
                   }}
                 >
                   {/* Expand / collapse toggle on left border */}
-                  <button
-                    onClick={() => {
-                      setGraphExpanded((v) => !v);
-                      setGraphFitTrigger((n) => n + 1);
-                    }}
-                    title={graphExpanded ? "Collapse graph" : "Expand graph"}
-                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-white hover:text-(--color-text) hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
-                  >
-                    {graphExpanded ? (
-                      <CaretRightIcon size={12} weight="bold" />
-                    ) : (
-                      <CaretLeftIcon size={12} weight="bold" />
-                    )}
-                  </button>
+                  {!isMobile && (
+                    <button
+                      onClick={() => {
+                        setGraphExpanded((v) => !v);
+                        setGraphFitTrigger((n) => n + 1);
+                      }}
+                      title={graphExpanded ? "Collapse graph" : "Expand graph"}
+                      className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-white hover:text-(--color-text) hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
+                    >
+                      {graphExpanded ? (
+                        <CaretRightIcon size={12} weight="bold" />
+                      ) : (
+                        <CaretLeftIcon size={12} weight="bold" />
+                      )}
+                    </button>
+                  )}
                   <div className="flex-1 overflow-hidden h-full">
                     <GraphView
                       fitTrigger={graphFitTrigger}

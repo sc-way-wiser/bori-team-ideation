@@ -1,8 +1,23 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
 import { CircleNotchIcon as Loader2Icon } from "@phosphor-icons/react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import Layout from "./components/Layout/Layout.jsx";
 import SignIn from "./components/Auth/SignIn.jsx";
+import ServiceWorkerUpdater from "./components/ServiceWorkerUpdater.jsx";
+
+function EveningThemeSync() {
+  useEffect(() => {
+    const sync = () => {
+      const isEvening = new Date().getHours() >= 18;
+      document.documentElement.toggleAttribute("data-evening", isEvening);
+    };
+    sync();
+    const id = setInterval(sync, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return null;
+}
 
 const ProtectedRoute = ({ children }) => {
   const { session, isAuthLoading } = useAuth();
@@ -51,6 +66,8 @@ const PublicRoute = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
+      <EveningThemeSync />
+      <ServiceWorkerUpdater />
       <BrowserRouter>
         <Routes>
           <Route

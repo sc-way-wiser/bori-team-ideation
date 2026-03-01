@@ -802,7 +802,7 @@ const FolderSection = ({
             />
           ) : (
             <span
-              className="block truncate text-xs font-semibold text-stone-950 uppercase tracking-wider cursor-default select-none"
+              className="block truncate text-xs font-semibold text-(--color-text) uppercase tracking-wider cursor-default select-none"
               title="Long-press to rename"
               onMouseDown={handleLongPressStart}
               onMouseUp={handleLongPressEnd}
@@ -1008,17 +1008,17 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
   };
 
   return (
-    <aside className="w-full h-full bg-(--color-surface) border-r border-(--color-border) flex flex-col relative">
+    <aside className="w-full h-full bg-(--color-background) border-r border-(--color-border) flex flex-col relative">
       {/* Mobile close header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-(--color-border) md:hidden">
-        <span className="text-xs font-semibold text-(--color-text-sec) uppercase tracking-wider">
-          Menu
+        <span className="text-base font-bold text-stone-400 tracking-wider">
+          IFany
         </span>
         <button
           onClick={onClose}
           className="p-1 rounded text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
         >
-          <XIcon size={16} />
+          <XIcon size={18} />
         </button>
       </div>
 
@@ -1049,7 +1049,7 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
             const id = createNote(null);
             onNoteSelect(id);
           }}
-          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-xs font-medium bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-primary-dk) transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full text-xs font-medium bg-(--color-primary) hover:bg-(--color-primary-hv) text-(--color-on-primary) transition-colors"
         >
           <PlusIcon size={15} /> Note
         </button>
