@@ -1201,6 +1201,7 @@ const FolderSection = ({
   // Parent folders persist open/close in localStorage; sub-folders default closed.
   const lsKey =
     !isSubFolder && folderId ? `bori-folder-open-${folderId}` : null;
+  const { isMobile } = useBrowser();
   const [open, setOpenRaw] = useState(() => {
     if (isSubFolder) return false;
     if (lsKey) {
@@ -1346,12 +1347,12 @@ const FolderSection = ({
 
         {!editing && !readonly && (
           <div className="flex items-center gap-0.5 shrink-0">
-            {/* ⋯ menu — on hover, collapses rename / share / add-subfolder / delete */}
+            {/* ⋯ menu — hover on desktop, always visible on mobile */}
             {(onRename ||
               onDelete ||
               onAddSubFolder ||
               (folder && folderId !== null)) && (
-              <div className="relative opacity-0 group-hover/fh:opacity-100 transition-opacity">
+              <div className={`relative transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover/fh:opacity-100"}`}>
                 <button
                   ref={menuBtnRef}
                   onClick={() => setMenuOpen((v) => !v)}
