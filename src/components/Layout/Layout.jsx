@@ -272,7 +272,7 @@ const Layout = () => {
                         setGraphFitTrigger((n) => n + 1);
                       }}
                       title={graphExpanded ? "Collapse graph" : "Expand graph"}
-                      className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-white hover:text-(--color-text) hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
+                      className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 px-1.5 h-14 flex items-center justify-center  bg-black/20 backdrop-blur-sm  text-(--color-text) hover:text-stone-950 hover:bg-white hover:border hover:border-stone-300 shadow-sm transition-colors ${graphExpanded ? "rounded-r-full left-3 hover:border-l-0" : "rounded-l-full -left-3 border-r-0 hover:border-r-0"}`}
                     >
                       {graphExpanded ? (
                         <CaretRightIcon size={12} weight="bold" />

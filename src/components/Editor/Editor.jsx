@@ -124,7 +124,7 @@ const LinkCardView = ({ node, updateAttributes, deleteNode }) => {
     <NodeViewWrapper>
       <div
         contentEditable={false}
-        className="group/lc my-4 flex items-center gap-2.5 px-3 py-2 rounded-xl border border-(--color-border) bg-(--color-background) hover:bg-white transition-colors w-fit max-w-full cursor-pointer select-none"
+        className="group/lc my-4 flex items-center gap-2.5 px-3 py-2 rounded-xl border border-(--color-border) bg-(--color-background) hover:bg-(--color-hover) transition-colors w-fit max-w-full cursor-pointer select-none"
         style={{ userSelect: "none" }}
         onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
       >
@@ -167,7 +167,7 @@ const LinkCardView = ({ node, updateAttributes, deleteNode }) => {
             e.stopPropagation();
             deleteNode();
           }}
-          className="ml-1 opacity-0 group-hover/lc:opacity-60 hover:opacity-100! text-(--color-text-muted) hover:text-stone-950 transition-opacity cursor-pointer"
+          className="ml-1 opacity-0 group-hover/lc:opacity-60 hover:opacity-100! text-(--color-text-muted) hover:text-(--color-text) transition-opacity cursor-pointer"
           title="Remove"
         >
           <XIcon size={16} weight="bold" />
