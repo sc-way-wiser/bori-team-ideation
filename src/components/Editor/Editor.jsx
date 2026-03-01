@@ -1152,7 +1152,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
         </svg>
         <div className="text-center">
           <p className="text-xl font-semibold text-(--color-text)">
-            Welcome to IdeaFlow
+            Welcome to idearium
           </p>
           <p className="text-sm mt-1 text-(--color-text-sec)">
             Your personal knowledge base. Create a note to get started.

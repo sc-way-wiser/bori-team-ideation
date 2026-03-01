@@ -20,6 +20,11 @@ export const useConfigStore = create(
     (set, get) => ({
       ...CONFIG_DEFAULTS,
       isLoaded: false,
+      // Device-local only — never synced to Supabase
+      // null = auto (time-based), "day" = force light, "night" = force dark
+      themeOverride: null,
+
+      setThemeOverride: (override) => set({ themeOverride: override }),
 
       // ── Load from Supabase ─────────────────────────────────────────────
       loadConfig: async () => {
@@ -39,9 +44,11 @@ export const useConfigStore = create(
           // Schedule remote save (skip non-config keys like isLoaded)
           const {
             isLoaded: _isLoaded,
+            themeOverride: _to,
             loadConfig: _lc,
             updateConfig: _uc,
             resetConfig: _rc,
+            setThemeOverride: _sto,
             ...configOnly
           } = next;
           supabase.auth.getUser().then(({ data: { user } }) => {

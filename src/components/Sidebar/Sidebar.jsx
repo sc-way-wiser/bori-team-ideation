@@ -429,14 +429,16 @@ const NoteRow = ({
   const moveButtonRef = useRef(null);
   const shareButtonRef = useRef(null);
   const mobileShareButtonRef = useRef(null);
-  const menuRef = useRef(null);
+  const menuRef = useRef(null); // portal dropdown div
+  const dotsContainerRef = useRef(null); // wrapper around the ··· button
 
   // Close desktop dropdown on outside click
   useEffect(() => {
     if (!menuOpen || isMobile) return;
     const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target))
-        setMenuOpen(false);
+      const inPortal = menuRef.current?.contains(e.target);
+      const inTrigger = dotsContainerRef.current?.contains(e.target);
+      if (!inPortal && !inTrigger) setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -587,7 +589,7 @@ const NoteRow = ({
         )}
 
         {/* ··· button */}
-        <div className="relative shrink-0" ref={menuRef}>
+        <div className="relative shrink-0" ref={dotsContainerRef}>
           <button
             ref={dotsButtonRef}
             onClick={(e) => {
@@ -1229,6 +1231,17 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
     return names;
   }, [notes, currentUserId]);
 
+  // User B's own folder IDs whose name clashes with a "Shared with me" folder.
+  // These folders are hidden from the regular section and their notes are merged
+  // into the shared section instead — so the same name never appears twice.
+  const clashingFolderIds = useMemo(() => {
+    const ids = new Set();
+    for (const f of folders) {
+      if (sharedFolderNames.has(f.name)) ids.add(f.id);
+    }
+    return ids;
+  }, [folders, sharedFolderNames]);
+
   const isAccessible = (note) => {
     if (!note.ownerId) return false;
     if (note.ownerId === currentUserId) return true;
@@ -1366,37 +1379,42 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
           </>
         ) : (
           <>
-            {folders.map((folder) => (
-              <FolderSection
-                key={folder.id}
-                folderId={folder.id}
-                folderName={folder.name}
-                notes={notes.filter(
-                  (n) =>
-                    n.folderId === folder.id && n.ownerId === currentUserId,
-                )}
-                activeNoteId={activeNoteId}
-                isDragOver={dragOverFolder === folder.id}
-                onNoteSelect={handleNoteSelect}
-                onNoteShare={(id) => {
-                  requestShareFor(id);
-                  onNoteSelect(id);
-                }}
-                onDragStartNote={handleDragStart}
-                onDragOver={(e) => handleDragOver(e, folder.id)}
-                onDragLeave={() => setDragOverFolder(null)}
-                onDrop={(e) => handleDrop(e, folder.id)}
-                onAddNote={() => {
-                  const id = createNote(folder.id);
-                  onNoteSelect(id);
-                }}
-                onRename={(name) => renameFolder(folder.id, name)}
-                onDelete={() => deleteFolder(folder.id)}
-                selectedNoteIds={selectedNoteIds}
-                onToggleSelect={toggleNoteSelect}
-                linkedNoteIdSet={linkedNoteIdSet}
-              />
-            ))}
+            {folders
+              // Never show a folder in the regular section if its name matches
+              // a "Shared with me" folder — regardless of whether it has notes.
+              // Notes inside clashing folders are shown under "Shared with me".
+              .filter((folder) => !clashingFolderIds.has(folder.id))
+              .map((folder) => (
+                <FolderSection
+                  key={folder.id}
+                  folderId={folder.id}
+                  folderName={folder.name}
+                  notes={notes.filter(
+                    (n) =>
+                      n.folderId === folder.id && n.ownerId === currentUserId,
+                  )}
+                  activeNoteId={activeNoteId}
+                  isDragOver={dragOverFolder === folder.id}
+                  onNoteSelect={handleNoteSelect}
+                  onNoteShare={(id) => {
+                    requestShareFor(id);
+                    onNoteSelect(id);
+                  }}
+                  onDragStartNote={handleDragStart}
+                  onDragOver={(e) => handleDragOver(e, folder.id)}
+                  onDragLeave={() => setDragOverFolder(null)}
+                  onDrop={(e) => handleDrop(e, folder.id)}
+                  onAddNote={() => {
+                    const id = createNote(folder.id);
+                    onNoteSelect(id);
+                  }}
+                  onRename={(name) => renameFolder(folder.id, name)}
+                  onDelete={() => deleteFolder(folder.id)}
+                  selectedNoteIds={selectedNoteIds}
+                  onToggleSelect={toggleNoteSelect}
+                  linkedNoteIdSet={linkedNoteIdSet}
+                />
+              ))}
 
             <FolderSection
               folderId={null}
@@ -1446,16 +1464,20 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
                 groups[key].push(note);
               }
 
-              // Include User B's own notes that sit in a shared folder
-              const sharedFolderNames = new Set(
+              // Include User B's own notes that sit in a shared folder —
+              // either notes filed under a clashing folder id (User B had a
+              // same-named folder), or notes filed by name with no folderId.
+              const groupNames = new Set(
                 Object.keys(groups).filter((k) => k !== "__root__"),
               );
               const myNotesInSharedFolders = notes.filter(
                 (n) =>
                   n.ownerId === currentUserId &&
                   n.folderName &&
-                  sharedFolderNames.has(n.folderName) &&
-                  !n.folderId, // folderId is null because B doesn't own A's folder object
+                  groupNames.has(n.folderName) &&
+                  // folderId is null (filed by name only) OR points to one of
+                  // User B's clashing folders that we hid from the regular list
+                  (!n.folderId || clashingFolderIds.has(n.folderId)),
               );
               for (const note of myNotesInSharedFolders) {
                 const key = note.folderName;

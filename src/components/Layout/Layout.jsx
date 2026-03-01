@@ -1,15 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useBrowser } from "../../hooks/useBrowserDetect.jsx";
 import {
   ShareNetworkIcon as NetworkIcon,
-  PlusIcon,
   LightbulbIcon,
   ListIcon as MenuIcon,
   CircleNotchIcon as Loader2Icon,
   SignOutIcon as LogOutIcon,
-  GearIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  SunIcon,
+  MoonIcon,
+  PlusIcon,
 } from "@phosphor-icons/react";
 import { useNoteStore } from "../../store/useNoteStore.js";
 import { useConfigStore } from "../../store/useConfigStore.js";
@@ -24,8 +26,13 @@ const Layout = () => {
   const { activeNoteId, createNote, setActiveNote, loadNotes, isLoading } =
     useNoteStore();
   const { user, signOut } = useAuth();
+  const { themeOverride, setThemeOverride } = useConfigStore();
   const [showSignIn, setShowSignIn] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [profileMenuRect, setProfileMenuRect] = useState(null);
+  const profileRef = useRef(null);
+  const profileMenuRef = useRef(null);
   const [showGraph, setShowGraph] = useState(() => window.innerWidth >= 1024);
   const [graphExpanded, setGraphExpanded] = useState(false);
   const [graphFitTrigger, setGraphFitTrigger] = useState(0);
@@ -34,6 +41,18 @@ const Layout = () => {
   const [showSettings, setShowSettings] = useState(false);
   const { loadConfig } = useConfigStore();
   const { isMobile } = useBrowser();
+
+  // Close profile menu on outside click
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    const handler = (e) => {
+      const inMenu = profileMenuRef.current?.contains(e.target);
+      const inTrigger = profileRef.current?.contains(e.target);
+      if (!inMenu && !inTrigger) setShowProfileMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showProfileMenu]);
 
   useEffect(() => {
     loadNotes();
@@ -116,47 +135,137 @@ const Layout = () => {
         </button> */}
 
         {user ? (
-          <div className="flex items-center gap-1.5 ml-1">
-            {user.user_metadata?.avatar_url ? (
-              <img
-                src={
-                  user.user_metadata.avatar_url ?? user.user_metadata?.picture
-                }
-                alt={user.user_metadata?.full_name ?? "User"}
-                className="w-9 h-9 rounded-full object-cover border border-(--color-border)"
-                title={user.email ?? ""}
-                onError={() => (
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                    style={{
-                      backgroundColor: "var(--color-primary)",
-                      color: "var(--color-primary-dk)",
-                    }}
-                    title={user.email ?? ""}
-                  >
-                    {(user.email ?? "U")[0].toUpperCase()}
-                  </div>
-                )}
-              />
-            ) : (
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{
-                  backgroundColor: "var(--color-primary)",
-                  color: "var(--color-on-primary)",
-                }}
-                title={user.email ?? ""}
-              >
-                {(user.email ?? "U")[0].toUpperCase()}
-              </div>
-            )}
+          <div className="relative flex items-center ml-1">
+            {/* Avatar button — opens profile menu */}
             <button
-              onClick={() => setShowSignOutConfirm(true)}
-              title="Sign out"
-              className="p-1.5 rounded text-(--color-text-muted) hover:text-red-500 hover:bg-red-50 transition-colors"
+              ref={profileRef}
+              onClick={() => {
+                const rect = profileRef.current?.getBoundingClientRect();
+                setProfileMenuRect(rect ?? null);
+                setShowProfileMenu((v) => !v);
+              }}
+              className="focus:outline-none"
             >
-              <LogOutIcon size={24} />
+              {user.user_metadata?.avatar_url ? (
+                <img
+                  src={
+                    user.user_metadata.avatar_url ?? user.user_metadata?.picture
+                  }
+                  alt={user.user_metadata?.full_name ?? "User"}
+                  className="w-9 h-9 rounded-full object-cover border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
+                />
+              ) : (
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
+                  style={{
+                    backgroundColor: "var(--color-primary)",
+                    color: "var(--color-on-primary)",
+                  }}
+                >
+                  {(user.email ?? "U")[0].toUpperCase()}
+                </div>
+              )}
             </button>
+
+            {/* Profile popover — portal so it's never clipped by any ancestor */}
+            {showProfileMenu &&
+              profileMenuRect &&
+              ReactDOM.createPortal(
+                <div
+                  ref={profileMenuRef}
+                  style={{
+                    position: "fixed",
+                    top: profileMenuRect.bottom + 8,
+                    right: window.innerWidth - profileMenuRect.right,
+                    zIndex: 9999,
+                    width: 240,
+                  }}
+                  className="bg-(--color-surface) border border-(--color-border) rounded-2xl shadow-xl overflow-hidden"
+                >
+                  {/* User info */}
+                  <div className="px-4 py-3 border-b border-(--color-border)">
+                    <p className="text-sm font-semibold text-(--color-text) truncate">
+                      {user.user_metadata?.full_name || user.email}
+                    </p>
+                    {user.user_metadata?.full_name && (
+                      <p className="text-xs text-(--color-text-muted) truncate mt-0.5">
+                        {user.email}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Day / Night toggle */}
+                  <div className="px-4 py-3 border-b border-(--color-border)">
+                    <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider mb-2">
+                      Appearance
+                    </p>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() =>
+                          setThemeOverride(
+                            themeOverride === "day" ? null : "day",
+                          )
+                        }
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-colors border ${
+                          themeOverride === "day"
+                            ? "bg-(--color-primary) border-(--color-primary-dk) text-(--color-primary-dk)"
+                            : "bg-(--color-input) border-(--color-border) text-(--color-text-sec) hover:bg-(--color-hover)"
+                        }`}
+                      >
+                        <SunIcon
+                          size={14}
+                          weight={themeOverride === "day" ? "fill" : "regular"}
+                        />
+                        Day
+                      </button>
+                      <button
+                        onClick={() =>
+                          setThemeOverride(
+                            themeOverride === "night" ? null : "night",
+                          )
+                        }
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-colors border ${
+                          themeOverride === "night"
+                            ? "bg-(--color-primary) border-(--color-primary-dk) text-(--color-primary-dk)"
+                            : "bg-(--color-input) border-(--color-border) text-(--color-text-sec) hover:bg-(--color-hover)"
+                        }`}
+                      >
+                        <MoonIcon
+                          size={14}
+                          weight={
+                            themeOverride === "night" ? "fill" : "regular"
+                          }
+                        />
+                        Night
+                      </button>
+                    </div>
+                    {themeOverride !== null && (
+                      <p className="text-xs text-(--color-text-muted) text-center mt-1.5">
+                        Auto (7pm–7am){" "}
+                        <button
+                          onClick={() => setThemeOverride(null)}
+                          className="underline hover:text-(--color-text) transition-colors"
+                        >
+                          restore
+                        </button>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Sign out */}
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setShowSignOutConfirm(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm hover:bg-(--color-hover) text-red-500 transition-colors text-left"
+                  >
+                    <LogOutIcon size={16} />
+                    Sign out
+                  </button>
+                </div>,
+                document.body,
+              )}
           </div>
         ) : (
           <button

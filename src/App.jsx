@@ -2,20 +2,29 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { CircleNotchIcon as Loader2Icon } from "@phosphor-icons/react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
+import { useConfigStore } from "./store/useConfigStore.js";
 import Layout from "./components/Layout/Layout.jsx";
 import SignIn from "./components/Auth/SignIn.jsx";
 import ServiceWorkerUpdater from "./components/ServiceWorkerUpdater.jsx";
 
 function EveningThemeSync() {
+  const themeOverride = useConfigStore((s) => s.themeOverride);
+
   useEffect(() => {
     const sync = () => {
-      const isEvening = new Date().getHours() >= 18;
+      const hour = new Date().getHours();
+      const isEvening =
+        themeOverride === "night"
+          ? true
+          : themeOverride === "day"
+            ? false
+            : hour >= 19 || hour < 7; // 7 pm – 7 am local time
       document.documentElement.toggleAttribute("data-evening", isEvening);
     };
     sync();
     const id = setInterval(sync, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [themeOverride]);
   return null;
 }
 
