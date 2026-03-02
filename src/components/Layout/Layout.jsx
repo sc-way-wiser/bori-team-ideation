@@ -40,7 +40,7 @@ const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { loadConfig } = useConfigStore();
-  const { isMobile } = useBrowser();
+  const { isMobile, viewportHeight } = useBrowser();
 
   // Close profile menu on outside click
   useEffect(() => {
@@ -80,9 +80,12 @@ const Layout = () => {
   console.log("user", user);
 
   return (
-    <div className="h-screen flex flex-col bg-(--color-background) text-(--color-text) overflow-hidden max-w-720 mx-auto">
+    <div
+      className="flex flex-col bg-(--color-background) text-(--color-text) overflow-hidden max-w-720 mx-auto"
+      style={{ height: viewportHeight > 0 ? viewportHeight : "100dvh" }}
+    >
       {/* Top Navbar */}
-      <header className="flex items-center gap-2 px-3 py-2 bg-(--color-background) border-b border-(--color-border) shrink-0 shadow-sm">
+      <header className="flex items-center gap-2 px-3 py-3 bg-(--color-background) border-b border-(--color-border) shrink-0 shadow-sm">
         <button
           className="md:hidden p-1.5 rounded text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
           onClick={() => setSidebarOpen((v) => !v)}
@@ -104,13 +107,13 @@ const Layout = () => {
             setGraphExpanded(false);
             setSidebarOpen(false);
           }}
-          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-full text-sm font-bold transition-colors ${
+          className={`flex items-center gap-1.5 px-2.5 py-2.5 rounded-full text-sm font-bold transition-colors ${
             showGraph
               ? "bg-(--color-primary) text-(--color-on-primary)"
               : "bg-(--color-input) text-(--color-text-sec) hover:bg-(--color-hover)"
           }`}
         >
-          <NetworkIcon size={18} />
+          <NetworkIcon size={20} />
           <span className="hidden sm:inline">Graph View</span>
         </button>
 
@@ -152,11 +155,11 @@ const Layout = () => {
                     user.user_metadata.avatar_url ?? user.user_metadata?.picture
                   }
                   alt={user.user_metadata?.full_name ?? "User"}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
+                  className="w-10 h-10 rounded-full object-cover border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
                 />
               ) : (
                 <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
                   style={{
                     backgroundColor: "var(--color-primary)",
                     color: "var(--color-on-primary)",
@@ -183,7 +186,7 @@ const Layout = () => {
                   className="bg-(--color-surface) border border-(--color-border) rounded-2xl shadow-xl overflow-hidden"
                 >
                   {/* User info */}
-                  <div className="px-4 py-3 border-b border-(--color-border)">
+                  <div className="px-3 py-3 border-b border-(--color-border)">
                     <p className="text-sm font-semibold text-(--color-text) truncate">
                       {user.user_metadata?.full_name || user.email}
                     </p>

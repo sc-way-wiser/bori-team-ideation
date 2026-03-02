@@ -888,6 +888,8 @@ const NoteEditor = ({ noteId, onNavigate }) => {
     removeTag,
     addLinkedNote,
     removeLinkedNote,
+    createNote,
+    setActiveNote,
     notes,
     folders,
     defaultFolderName,
@@ -1494,7 +1496,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
       {/* Grid toolbar — shown when cursor is inside a table */}
       <div className="overflow-hidden shrink-0">
         <div
-          className="flex items-center gap-3 px-4 py-2 border-b border-(--color-border) bg-(--color-background)"
+          className="overflow-x-auto scrollbar-hide flex items-center gap-3 px-4 py-2 border-b border-(--color-border) bg-(--color-background)"
           style={{
             transition: "transform 200ms ease-out, opacity 200ms ease-out",
             transform: isInTable ? "translateY(0)" : "translateY(-100%)",
@@ -1643,7 +1645,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
               setActiveTableWrapper(null);
             }}
             title="Delete table"
-            className="absolute top-0 right-1 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-(--color-surface) border border-(--color-border) text-(--color-on-primary) hover:bg-red-50 hover:border-red-300 hover:text-red-500 shadow-sm transition-colors"
+            className="absolute top-0 right-1 z-10 w-10 h-10 flex items-center justify-center rounded-lg bg-(--color-surface) border border-(--color-border) text-(--color-on-primary) hover:bg-red-50 hover:border-red-300 hover:text-red-500 shadow-sm transition-colors"
           >
             <Trash2Icon size={18} />
           </button>,
@@ -2050,6 +2052,20 @@ const NoteEditor = ({ noteId, onNavigate }) => {
         </BottomSheet>
       </div>
 
+      {/* ── Floating + button — small screens only ── */}
+      {isMobile && (
+        <button
+          onClick={() => {
+            const id = createNote(note?.folderId ?? null);
+            setActiveNote(id);
+          }}
+          aria-label="New note"
+          className="sm:hidden fixed bottom-5 left-5 z-20 w-14 h-14 rounded-full bg-(--color-primary) text-(--color-on-primary) shadow-lg flex items-center justify-center hover:bg-(--color-primary-hv) active:scale-95 transition-all"
+        >
+          <PlusIcon size={26} weight="bold" />
+        </button>
+      )}
+
       {/* ── Thinking toggle — owner only ── */}
       {note?.ownerId === currentUserId && (
         <button
@@ -2057,7 +2073,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
           title={
             thinkingNoteIds.includes(noteId) ? "Stop thinking" : "I am thinking"
           }
-          className={`absolute bottom-20 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
+          className={`fixed bottom-5 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
             thinkingNoteIds.includes(noteId)
               ? "bg-(--color-primary) text-(--color-on-primary) shadow-amber-200"
               : "bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:border-amber-400 hover:text-amber-400"

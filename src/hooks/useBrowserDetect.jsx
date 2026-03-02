@@ -43,20 +43,35 @@ export const BrowserProvider = ({ children }) => {
 const detectBrowser = () => {
   if (typeof window === "undefined") {
     return {
-      isMobile: false, isIOS: false, isAndroid: false,
-      isChrome: false, isSafari: false, isFirefox: false, isEdge: false,
-      browser: "Server", supportsViewportUnits: false,
-      viewportHeight: 0, viewportWidth: 0, userAgent: "",
+      isMobile: false,
+      isIOS: false,
+      isAndroid: false,
+      isChrome: false,
+      isSafari: false,
+      isFirefox: false,
+      isEdge: false,
+      browser: "Server",
+      supportsViewportUnits: false,
+      viewportHeight: 0,
+      viewportWidth: 0,
+      userAgent: "",
     };
   }
 
   const userAgent = navigator.userAgent || navigator.vendor || window.opera;
   const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
   const isAndroid = /Android/.test(userAgent);
-  const isMobile = isIOS || isAndroid || /webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  const isMobile =
+    isIOS ||
+    isAndroid ||
+    /webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  // Touch detection: includes tablets (iPad, Android tablet) even when UA says "desktop"
+  const isTouch =
+    "ontouchstart" in window || navigator.maxTouchPoints > 0 || isMobile;
 
   const isChrome = /Chrome/i.test(userAgent) && !/Edge|Edg/i.test(userAgent);
-  const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS|Edg/i.test(userAgent);
+  const isSafari =
+    /Safari/i.test(userAgent) && !/Chrome|CriOS|Edg/i.test(userAgent);
   const isFirefox = /Firefox|FxiOS/i.test(userAgent);
   const isEdge = /Edge|Edg/i.test(userAgent);
 
@@ -66,7 +81,9 @@ const detectBrowser = () => {
   const isMobileEdge = isMobile && isEdge;
 
   const supportsViewportUnits =
-    typeof CSS !== "undefined" && CSS.supports && CSS.supports("height", "100dvh");
+    typeof CSS !== "undefined" &&
+    CSS.supports &&
+    CSS.supports("height", "100dvh");
 
   let browserName = "Unknown";
   if (isMobile) {
@@ -80,6 +97,7 @@ const detectBrowser = () => {
 
   return {
     isMobile,
+    isTouch,
     isIOS,
     isAndroid,
     isChrome: isMobileChrome,

@@ -1201,7 +1201,8 @@ const FolderSection = ({
   // Parent folders persist open/close in localStorage; sub-folders default closed.
   const lsKey =
     !isSubFolder && folderId ? `bori-folder-open-${folderId}` : null;
-  const { isMobile } = useBrowser();
+  const { isTouch, viewportWidth } = useBrowser();
+  const isSmallScreen = viewportWidth > 0 && viewportWidth < 640;
   const [open, setOpenRaw] = useState(() => {
     if (isSubFolder) return false;
     if (lsKey) {
@@ -1225,9 +1226,9 @@ const FolderSection = ({
   const menuBtnRef = useRef(null);
   const longPressTimeout = useRef(null);
 
-  // Close ⋯ menu on outside click
+  // Close ⋯ popover on outside click (desktop/tablet only — small screens use BottomSheet)
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen || isSmallScreen) return;
     const handler = (e) => {
       if (
         menuRef.current &&
@@ -1240,7 +1241,7 @@ const FolderSection = ({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
+  }, [menuOpen, isSmallScreen]);
 
   const startEditing = () => {
     setNameVal(folderName);
@@ -1347,12 +1348,14 @@ const FolderSection = ({
 
         {!editing && !readonly && (
           <div className="flex items-center gap-0.5 shrink-0">
-            {/* ⋯ menu — hover on desktop, always visible on mobile */}
+            {/* ⋯ menu — always visible on touch devices, hover-only on desktop */}
             {(onRename ||
               onDelete ||
               onAddSubFolder ||
               (folder && folderId !== null)) && (
-              <div className={`relative transition-opacity ${isMobile ? "opacity-100" : "opacity-0 group-hover/fh:opacity-100"}`}>
+              <div
+                className={`relative transition-opacity ${isTouch ? "opacity-100" : "opacity-0 group-hover/fh:opacity-100"}`}
+              >
                 <button
                   ref={menuBtnRef}
                   onClick={() => setMenuOpen((v) => !v)}
@@ -1362,7 +1365,8 @@ const FolderSection = ({
                   <DotsThreeIcon size={20} weight="bold" />
                 </button>
 
-                {menuOpen && (
+                {/* Popover — tablets & desktop */}
+                {menuOpen && !isSmallScreen && (
                   <div
                     ref={menuRef}
                     className="absolute right-0 top-full mt-1 z-50 min-w-[140px] bg-(--color-surface) border border-(--color-border) rounded-lg shadow-lg py-1 text-xs"
@@ -1433,6 +1437,84 @@ const FolderSection = ({
                 )}
               </div>
             )}
+
+            {/* Folder options — BottomSheet on small screens */}
+            <BottomSheet
+              isOpen={menuOpen && isSmallScreen}
+              onClose={() => setMenuOpen(false)}
+              showHandle
+              showHeader={false}
+              maxHeight="auto"
+              minHeight="auto"
+              hideActions
+            >
+              <div className="pb-4 pt-2">
+                <p className="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider px-4 pb-2 truncate">
+                  {folderName}
+                </p>
+                {onRename && (
+                  <button
+                    className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-(--color-hover) text-(--color-text) transition-colors text-sm"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      startEditing();
+                    }}
+                  >
+                    <PencilIcon size={18} />
+                    Rename
+                  </button>
+                )}
+                {onAddSubFolder && (
+                  <button
+                    className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-(--color-hover) text-(--color-text) transition-colors text-sm"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onAddSubFolder();
+                    }}
+                  >
+                    <FolderPlusIcon size={18} />
+                    Add sub-folder
+                  </button>
+                )}
+                {folder && folderId !== null && (
+                  <button
+                    ref={folderShareRef}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-(--color-hover) text-(--color-text) transition-colors text-sm"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      const rect =
+                        folderShareRef.current?.getBoundingClientRect();
+                      setFolderShareAnchorRect(rect ?? null);
+                      setFolderShareOpen((v) => !v);
+                    }}
+                  >
+                    <UserPlusIcon size={18} />
+                    Share
+                    {(folder.sharedWith ?? []).length > 0 && (
+                      <UsersIcon
+                        size={14}
+                        className="ml-auto text-(--color-primary-dk)"
+                      />
+                    )}
+                  </button>
+                )}
+                {onDelete && (
+                  <>
+                    <div className="mx-4 my-1 h-px bg-(--color-border)" />
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-red-50 text-red-500 transition-colors text-sm"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onDelete();
+                      }}
+                    >
+                      <Trash2Icon size={18} />
+                      Delete folder
+                    </button>
+                  </>
+                )}
+              </div>
+            </BottomSheet>
 
             {/* Folder share popover */}
             {folderShareOpen && folderShareAnchorRect && folder && (
@@ -1670,15 +1752,19 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
   return (
     <aside className="w-full h-full bg-(--color-background) border-r border-(--color-border) flex flex-col relative">
       {/* Mobile close header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-(--color-border) md:hidden">
-        <span className="text-base font-bold text-stone-400 tracking-wider">
-          Idearium
-        </span>
+      <div className="flex items-center justify-between px-3 py-3 border-b border-(--color-border) md:hidden">
+        <div className="flex items-center gap-2">
+          <LightbulbIcon size={20} className="text-(--color-primary-dk)" />
+          <span className="text-base font-bold text-stone-400 tracking-wider">
+            Idearium
+          </span>
+        </div>
+
         <button
           onClick={onClose}
           className="p-1 rounded text-(--color-text-sec) hover:bg-(--color-hover) transition-colors"
         >
-          <XIcon size={18} />
+          <XIcon size={20} />
         </button>
       </div>
 
