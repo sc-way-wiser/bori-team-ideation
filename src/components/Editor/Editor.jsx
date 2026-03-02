@@ -1272,15 +1272,11 @@ const NoteEditor = ({ noteId, onNavigate }) => {
   const linkedNotes =
     note.linkedNoteIds?.map((id) => getNoteById(id)).filter(Boolean) ?? [];
 
-  // Notes available to link — scoped to the same folder tree (parent + all sub-folders).
-  // Notes from completely different top-level folders are excluded.
+  // Notes available to link — show all accessible notes across all folders.
   const linkedIds = new Set(note.linkedNoteIds ?? []);
 
   const folderNotes = notes.filter(
-    (n) =>
-      n.id !== noteId &&
-      !linkedIds.has(n.id) &&
-      treeFolderIds.has(n.folderId ?? null),
+    (n) => n.id !== noteId && !linkedIds.has(n.id),
   );
   const filteredFolderNotes = linkSearch.trim()
     ? folderNotes.filter((n) =>

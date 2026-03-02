@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState, useMemo, useEffect } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { forceX, forceY } from "d3-force-3d";
-import { ArrowLeftIcon, TagIcon, XIcon } from "@phosphor-icons/react";
 import { useNoteStore } from "../../store/useNoteStore.js";
 import { useBrowser } from "../../hooks/useBrowserDetect.jsx";
 
@@ -220,22 +219,26 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     notes,
     folders,
     defaultFolderName,
-    getAllTags,
     activeNoteId,
     currentUserId,
     thinkingNoteIds,
   } = useNoteStore();
   const { isMobile } = useBrowser();
-  const allTags = getAllTags();
-  const [tagFilter, setTagFilter] = useState("");
-  const [hoveredId, setHoveredId] = useState(null);
   const fgRef = useRef(undefined);
   const containerRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const fitDone = useRef(false);
+  const [hoveredId, setHoveredId] = useState(null);
   const [isEvening, setIsEvening] = useState(() =>
     document.documentElement.hasAttribute("data-evening"),
   );
+
+  // Hierarchical drill-down: which folders are expanded (shows children)
+  const [expandedFolders, setExpandedFolders] = useState(new Set());
+  const nodePositionsRef = useRef(new Map()); // nodeId → { x, y }
+  const expandOriginRef = useRef(null); // { folderId, x, y }
+  const pinnedNodeIdRef = useRef(null); // nodeId to pin (fx/fy) after expand/collapse
+  const prevVisibleNodeIdsRef = useRef(new Set()); // IDs present in the last rendered graph
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -250,46 +253,6 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
 
   const graphBg = isEvening ? "#1c1917" : "#ffffff";
 
-  // Stable folder scope — only changes when active note moves to a different folder.
-  // Helper: walk up to the top-level ancestor folder ID
-  const rootFolderIdFor = useCallback(
-    (folderId) => {
-      if (!folderId) return null;
-      let cur = folders.find((f) => f.id === folderId);
-      while (cur?.parentId) {
-        const parent = folders.find((f) => f.id === cur.parentId);
-        if (!parent) break;
-        cur = parent;
-      }
-      return cur?.id ?? folderId;
-    },
-    [folders],
-  );
-
-  // Stable folder scope — stored as the ROOT ancestor ID so that clicking
-  // a note in a sub-folder keeps the same scope as its parent folder.
-  // This preserves node positions when switching notes within the same tree.
-  const [graphScope, setGraphScope] = useState(() => {
-    const activeNote = notes.find((n) => n.id === activeNoteId);
-    const rawFolderId = activeNote?.folderId ?? null;
-    return {
-      folderId: rootFolderIdFor(rawFolderId),
-      ownerId: activeNote?.ownerId ?? null,
-    };
-  });
-
-  useEffect(() => {
-    const activeNote = notes.find((n) => n.id === activeNoteId);
-    const rawFolderId = activeNote?.folderId ?? null;
-    const rootId = rootFolderIdFor(rawFolderId);
-    const ownerId = activeNote?.ownerId ?? null;
-    setGraphScope((prev) => {
-      if (prev.folderId === rootId && prev.ownerId === ownerId) return prev;
-      return { folderId: rootId, ownerId };
-    });
-  }, [notes, activeNoteId, rootFolderIdFor]);
-
-  // Same visibility rule as Sidebar
   const isAccessible = (note) => {
     if (!note.ownerId) return true;
     if (note.ownerId === currentUserId) return true;
@@ -314,158 +277,258 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     return () => ro.disconnect();
   }, []);
 
-  // ── Graph data ──────────────────────────────────────────────────────────────
+  // ── Graph data (hierarchical drill-down) ──────────────────────────────────
   const graphData = useMemo(() => {
     const accessible = notes.filter(isAccessible);
 
-    // graphScope.folderId is already the root ancestor ID (resolved in useEffect).
-    // Just collect all descendants from that root.
-    const { folderId: rootFolderId, ownerId: activeOwnerId } = graphScope;
-
-    // Collect root + all descendants recursively
-    const folderIdSet = new Set();
-    folderIdSet.add(rootFolderId); // null = unfiled/default
-    if (rootFolderId) {
-      const queue = [rootFolderId];
-      while (queue.length) {
-        const pid = queue.shift();
-        for (const f of folders) {
-          if (f.parentId === pid) {
-            folderIdSet.add(f.id);
-            queue.push(f.id);
-          }
-        }
-      }
-    }
-
-    // The default folder's notes always use folderId=null regardless of the
-    // backing row UUID. Bidirectional mapping:
-    //   • scope = backingRow.id  →  also include null (direct-default notes)
-    //   • scope = null           →  also include backingRow.id + all its subfolder descendants
+    // Default folder bridging: notes with folderId=null belong to
+    // the default folder's backing row (if it exists).
     const defaultBackingRow = folders.find(
       (f) =>
         !f.parentId &&
         f.ownerId === currentUserId &&
         f.name === (defaultFolderName || "Notes"),
     );
-    if (defaultBackingRow) {
-      if (folderIdSet.has(defaultBackingRow.id)) {
-        // Already in scope via UUID — also capture the folderId=null notes
-        folderIdSet.add(null);
-      } else if (folderIdSet.has(null)) {
-        // Scope is null (active note in default section) — expand to backing row + children
-        folderIdSet.add(defaultBackingRow.id);
-        const queue = [defaultBackingRow.id];
-        while (queue.length) {
-          const pid = queue.shift();
-          for (const f of folders) {
-            if (f.parentId === pid) {
-              folderIdSet.add(f.id);
-              queue.push(f.id);
-            }
-          }
+
+    const normFid = (fid) => {
+      if ((fid === null || fid === undefined) && defaultBackingRow)
+        return defaultBackingRow.id;
+      return fid ?? null;
+    };
+
+    // Group notes by their direct (normalized) folder
+    const notesByFolder = new Map();
+    for (const n of accessible) {
+      const fid = normFid(n.folderId);
+      if (!notesByFolder.has(fid)) notesByFolder.set(fid, []);
+      notesByFolder.get(fid).push(n);
+    }
+
+    const topFolders = folders.filter((f) => !f.parentId);
+
+    // Count ALL notes under a folder (recursively)
+    const descendantCount = (folderId) => {
+      let count = (notesByFolder.get(folderId) ?? []).length;
+      for (const f of folders) {
+        if (f.parentId === folderId) count += descendantCount(f.id);
+      }
+      return count;
+    };
+
+    // Root folders that actually contain content
+    const visibleRoots = topFolders.filter((f) => descendantCount(f.id) > 0);
+
+    // Safety net: orphan null-folderId notes without a backing row
+    if (!defaultBackingRow && accessible.some((n) => n.folderId === null)) {
+      visibleRoots.push({
+        id: null,
+        name: defaultFolderName || "Notes",
+        parentId: null,
+      });
+    }
+
+    // Auto-expand when only 1 root folder (nothing to drill into)
+    const effectiveExpanded = new Set(expandedFolders);
+    if (visibleRoots.length <= 1 && visibleRoots.length > 0) {
+      effectiveExpanded.add(visibleRoots[0].id);
+    }
+
+    const allNodes = [];
+    const allLinks = [];
+    const origin = expandOriginRef.current;
+    const pinnedId = pinnedNodeIdRef.current;
+    // Snapshot of which nodes were on screen in the PREVIOUS render
+    const wasVisible = prevVisibleNodeIdsRef.current;
+
+    // Restore stored position for a node that was already on screen
+    const restorePos = (nodeId) => {
+      const pos = nodePositionsRef.current.get(nodeId);
+      if (!pos) return {};
+      if (nodeId === pinnedId) {
+        return { x: pos.x, y: pos.y, fx: pos.x, fy: pos.y };
+      }
+      return { x: pos.x, y: pos.y };
+    };
+
+    // Position for a node: restore if it was already visible, else spawn at parent center
+    const nodePos = (nodeId, parentFolderId) => {
+      if (wasVisible.has(nodeId)) return restorePos(nodeId);
+      return initChildPos(parentFolderId);
+    };
+
+    // Initial position for CHILDREN of a just-expanded folder.
+    // Spawn at the parent center with a meaningful jitter so the d3 charge
+    // force has a non-zero gradient between nodes and can push them apart.
+    // (Nodes at exactly the same pixel produce zero repulsion force.)
+    const JITTER = 35;
+    const initChildPos = (parentFolderId) => {
+      const nodeId = `folder:${parentFolderId}`;
+      let cx = 0,
+        cy = 0;
+      if (origin && origin.folderId === parentFolderId) {
+        cx = origin.x;
+        cy = origin.y;
+      } else {
+        const pos = nodePositionsRef.current.get(nodeId);
+        if (pos) {
+          cx = pos.x;
+          cy = pos.y;
         }
+      }
+      return {
+        x: cx + (Math.random() - 0.5) * JITTER,
+        y: cy + (Math.random() - 0.5) * JITTER,
+      };
+    };
+
+    // Collect ALL visible note IDs so we can compute similarity edges later
+    const allNoteNodes = [];
+
+    // Recursively add children of an expanded folder
+    const addChildren = (parentFolderId, parentNodeId) => {
+      const directNotes = notesByFolder.get(parentFolderId) ?? [];
+      for (const note of directNotes) {
+        const pos = nodePos(note.id, parentFolderId);
+        const noteNode = {
+          id: note.id,
+          type: "note",
+          name: note.title || "Untitled",
+          tags: note.tags,
+          val: 1,
+          ownerId: note.ownerId ?? null,
+          linkedNoteIds: note.linkedNoteIds ?? [],
+          originNoteId: note.originNoteId ?? null,
+          linkedOnly: note.linkedOnly ?? false,
+          content: note.content ?? "",
+          ...pos,
+        };
+        allNodes.push(noteNode);
+        allNoteNodes.push(noteNode);
+        allLinks.push({
+          source: parentNodeId,
+          target: note.id,
+          type: "hierarchy",
+        });
+      }
+
+      const subFolders = folders.filter((f) => f.parentId === parentFolderId);
+      for (const sub of subFolders) {
+        const subCount = descendantCount(sub.id);
+        if (subCount === 0) continue;
+        const subNodeId = `folder:${sub.id}`;
+        const subPos = nodePos(subNodeId, parentFolderId);
+        allNodes.push({
+          id: subNodeId,
+          type: "folder",
+          folderId: sub.id,
+          name: sub.name,
+          noteCount: subCount,
+          val: effectiveExpanded.has(sub.id) ? 4 : 2,
+          expanded: effectiveExpanded.has(sub.id),
+          isSubFolder: true,
+          ...subPos,
+        });
+        allLinks.push({
+          source: parentNodeId,
+          target: subNodeId,
+          type: "hierarchy",
+        });
+        if (effectiveExpanded.has(sub.id)) {
+          addChildren(sub.id, subNodeId);
+        }
+      }
+    };
+
+    for (const root of visibleRoots) {
+      const rootNodeId = `folder:${root.id}`;
+      const isExpanded = effectiveExpanded.has(root.id);
+      allNodes.push({
+        id: rootNodeId,
+        type: "folder",
+        folderId: root.id,
+        name: root.name,
+        noteCount: descendantCount(root.id),
+        val: isExpanded ? 5 : 3,
+        expanded: isExpanded,
+        ...restorePos(rootNodeId), // root folders always restore — they're always present
+      });
+      if (isExpanded) {
+        addChildren(root.id, rootNodeId);
       }
     }
 
-    const folderScoped = accessible.filter(
-      (n) =>
-        folderIdSet.has(n.folderId ?? null) &&
-        (activeOwnerId === null || n.ownerId === activeOwnerId),
-    );
+    // Update the "previously visible" snapshot for the next render
+    prevVisibleNodeIdsRef.current = new Set(allNodes.map((n) => n.id));
 
-    const pool = tagFilter
-      ? folderScoped.filter((n) => n.tags.includes(tagFilter))
-      : folderScoped;
-    const ids = new Set(pool.map((n) => n.id));
+    // ── Note-to-note relationship edges ──────────────────────────────────
+    if (allNoteNodes.length > 1) {
+      const noteIds = new Set(allNoteNodes.map((n) => n.id));
+      const linkSet = new Set(); // dedup key per pair
+      const addRelLink = (a, b, type, weight, sim = 0) => {
+        if (!noteIds.has(a) || !noteIds.has(b) || a === b) return;
+        const key = [a, b].sort().join("--");
+        if (linkSet.has(key)) return;
+        linkSet.add(key);
+        allLinks.push({ source: a, target: b, type, weight, sim });
+      };
 
-    // Build TF-IDF vectors once for all notes in this pool
-    const tfidfDocs = pool.map((n) => ({
-      id: n.id,
-      tokens: tokenize(n.title + " " + n.content),
-    }));
-    const tfidfVectors = buildTfIdf(tfidfDocs);
+      // Explicit linked notes (originNoteId)
+      for (const n of allNoteNodes)
+        if (n.originNoteId) addRelLink(n.id, n.originNoteId, "explicit", 12);
 
-    const degree = new Map();
-    const bump = (id) => degree.set(id, (degree.get(id) ?? 0) + 1);
+      // Strong [[wiki links]]
+      for (const n of allNoteNodes)
+        for (const lid of n.linkedNoteIds) addRelLink(n.id, lid, "link", 10);
 
-    const linkSet = new Set();
-    const links = [];
-
-    const addLink = (a, b, type, weight, sim = 0) => {
-      if (!ids.has(a) || !ids.has(b) || a === b) return;
-      const key = [a, b].sort().join("--"); // no type — one edge per pair, first added wins
-      if (linkSet.has(key)) return;
-      linkSet.add(key);
-      links.push({ source: a, target: b, type, weight, sim });
-      bump(a);
-      bump(b);
-    };
-
-    // 0. Explicit linked notes (originNoteId) — purple, highest priority
-    for (const n of pool)
-      if (n.originNoteId) addLink(n.id, n.originNoteId, "explicit", 12);
-
-    // 1. Strong relation [[links]]
-    for (const n of pool)
-      for (const lid of n.linkedNoteIds) addLink(n.id, lid, "link", 10);
-
-    // 2. Shared tags — skipped for linkedOnly notes (strong-relation-only)
-    for (let i = 0; i < pool.length; i++)
-      for (let j = i + 1; j < pool.length; j++) {
-        if (pool[i].linkedOnly || pool[j].linkedOnly) continue;
-        const shared = pool[i].tags.filter((t) => pool[j].tags.includes(t));
-        if (shared.length)
-          addLink(
-            pool[i].id,
-            pool[j].id,
-            "tag",
-            Math.min(10, shared.length * 3),
+      // Shared tags
+      for (let i = 0; i < allNoteNodes.length; i++)
+        for (let j = i + 1; j < allNoteNodes.length; j++) {
+          if (allNoteNodes[i].linkedOnly || allNoteNodes[j].linkedOnly)
+            continue;
+          const shared = allNoteNodes[i].tags.filter((t) =>
+            allNoteNodes[j].tags.includes(t),
           );
-      }
+          if (shared.length)
+            addRelLink(
+              allNoteNodes[i].id,
+              allNoteNodes[j].id,
+              "tag",
+              Math.min(10, shared.length * 3),
+            );
+        }
 
-    // 3. Content similarity (TF-IDF cosine) — skipped for linkedOnly notes
-    for (let i = 0; i < pool.length; i++)
-      for (let j = i + 1; j < pool.length; j++) {
-        if (pool[i].linkedOnly || pool[j].linkedOnly) continue;
-        const a = pool[i];
-        const b = pool[j];
-        // Skip if already connected by tags
-        const hasTag = a.tags.some((t) => b.tags.includes(t));
-        if (hasTag) continue;
-        const sim = cosineSim(tfidfVectors.get(a.id), tfidfVectors.get(b.id));
-        // Only connect notes with meaningful topical overlap
-        // sim 0.00–0.14 : noise / coincidental words → no edge
-        // sim 0.15–0.34 : weak similarity          → dotted line
-        // sim 0.35–1.00 : strong similarity         → dashed line
-        if (sim < 0.15) continue;
-        addLink(a.id, b.id, "content", 1, sim);
-      }
+      // Content similarity (TF-IDF cosine)
+      const tfidfDocs = allNoteNodes.map((n) => ({
+        id: n.id,
+        tokens: tokenize(n.name + " " + n.content),
+      }));
+      const tfidfVectors = buildTfIdf(tfidfDocs);
+      for (let i = 0; i < allNoteNodes.length; i++)
+        for (let j = i + 1; j < allNoteNodes.length; j++) {
+          if (allNoteNodes[i].linkedOnly || allNoteNodes[j].linkedOnly)
+            continue;
+          const a = allNoteNodes[i];
+          const b = allNoteNodes[j];
+          if (a.tags.some((t) => b.tags.includes(t))) continue;
+          const sim = cosineSim(tfidfVectors.get(a.id), tfidfVectors.get(b.id));
+          if (sim < 0.15) continue;
+          addRelLink(a.id, b.id, "content", 1, sim);
+        }
+    }
 
-    const nodes = pool.map((n) => ({
-      id: n.id,
-      name: n.title || "Untitled",
-      tags: n.tags,
-      val: 1 + (degree.get(n.id) ?? 0),
-      ownerId: n.ownerId ?? null,
-    }));
+    return { nodes: allNodes, links: allLinks };
+  }, [notes, folders, defaultFolderName, currentUserId, expandedFolders]);
 
-    return { nodes, links };
-  }, [notes, folders, defaultFolderName, tagFilter, currentUserId, graphScope]);
-
-  // Re-fit whenever the panel is resized (e.g. expand/collapse toggle)
-  // Must be declared AFTER graphData to avoid temporal dead zone reference.
+  // Re-fit on panel resize
   useEffect(() => {
-    if (!fitTrigger) return; // skip initial render (value=0)
+    if (!fitTrigger) return;
     const timer = setTimeout(() => {
-      const single = graphData.nodes.length <= 1;
-      const padding = single ? (isMobile ? 100 : 400) : isMobile ? 40 : 160;
+      const padding = isMobile ? 40 : 80;
       fgRef.current?.zoomToFit(400, padding);
-    }, 520); // wait for 480ms CSS transition + small buffer
+    }, 520);
     return () => clearTimeout(timer);
   }, [fitTrigger, dims.width, graphData.nodes.length, isMobile]);
 
-  // Reset fit flag whenever graphData changes
   useEffect(() => {
     fitDone.current = false;
   }, [graphData]);
@@ -475,30 +538,96 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     (node, ctx, globalScale) => {
       const x = node.x ?? 0;
       const y = node.y ?? 0;
+
+      // Track position for future expansion origin
+      nodePositionsRef.current.set(node.id, { x, y });
+
+      // ── Folder dot ──────────────────────────────────────────────────────
+      if (node.type === "folder") {
+        const isHovered = node.id === hoveredId;
+        // Subfolders are half the size of root folder dots
+        const scale = node.isSubFolder ? 0.75 : 1;
+        const r =
+          (isMobile ? (node.expanded ? 5 : 4) : node.expanded ? 3 : 2.5) *
+          scale;
+
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(x, y, r + 1, 0, 2 * Math.PI);
+        ctx.strokeStyle = isHovered
+          ? "#7c3aed"
+          : node.expanded
+            ? "#a78bfa"
+            : isEvening
+              ? "#78716c"
+              : "#a8a29e";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        // Fill
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = isHovered
+          ? "#7c3aed"
+          : node.expanded
+            ? isEvening
+              ? "#4c1d95"
+              : "#ede9fe"
+            : isEvening
+              ? "#292524"
+              : "#f5f5f4";
+        ctx.fill();
+
+        // Folder name — same size for root and subfolders
+        const fs = isMobile ? 4 : 2.5;
+        ctx.font = `600 ${fs}px Inter, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = isHovered
+          ? "#7c3aed"
+          : isEvening
+            ? "#d6d3d1"
+            : "#57534e";
+        const label = node.name;
+        ctx.fillText(
+          label.length > 22 ? label.slice(0, 20) + "\u2026" : label,
+          x,
+          y + r + 2,
+        );
+
+        // Note count badge (collapsed folders only)
+        if (!node.expanded) {
+          const countFs = isMobile ? 3.5 : 2.2;
+          ctx.font = `400 ${countFs}px Inter, sans-serif`;
+          ctx.fillStyle = "#a8a29e";
+          ctx.fillText(`${node.noteCount}`, x, y + r + 2 + fs + 1);
+        }
+        return;
+      }
+
+      // ── Note dot ────────────────────────────────────────────────────────
       const name = node.name ?? "";
       const id = node.id;
-      const val = node.val ?? 1;
       const isActive = id === activeNoteId;
       const isHovered = id === hoveredId;
       const isThinking =
         node.ownerId === currentUserId && thinkingNoteIds.includes(id);
-      const r = isMobile
-        ? Math.max(3, Math.sqrt(val) * 3.5)
-        : Math.max(1.5, Math.sqrt(val) * 1.5);
-      const fillColor = isActive
-        ? "#ebd05e"
-        : isHovered
-          ? "#7c3aed"
-          : "#d7dce0";
+      const r = isMobile ? 4 : 2;
 
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = fillColor;
+      ctx.fillStyle = isActive
+        ? "#ebd05e"
+        : isHovered
+          ? "#7c3aed"
+          : isEvening
+            ? "#78716c"
+            : "#d7dce0";
       ctx.fill();
 
-      // Lightbulb indicator — drawn with canvas primitives
+      // Lightbulb indicator for thinking notes
       if (isThinking) {
-        const s = Math.max(5, r * 1.8); // larger icon, scales with node
+        const s = Math.max(5, r * 1.8);
         const ix = x;
         const iy = y - r - s * 0.6;
         ctx.save();
@@ -506,11 +635,9 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
         ctx.lineWidth = Math.max(0.6, s * 0.07);
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        // bulb circle — stroke only
         ctx.beginPath();
         ctx.arc(ix, iy - s * 0.15, s * 0.32, 0, 2 * Math.PI);
         ctx.stroke();
-        // base cap strokes
         ctx.beginPath();
         ctx.moveTo(ix - s * 0.16, iy + s * 0.18);
         ctx.lineTo(ix + s * 0.16, iy + s * 0.18);
@@ -522,14 +649,14 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
         ctx.restore();
       }
 
-      if (globalScale >= 0.5 || isHovered || isActive) {
+      if (globalScale >= 0.8 || isHovered || isActive) {
         const fs = isMobile
-          ? Math.max(8, Math.min(14, 12 / globalScale))
-          : Math.max(5, Math.min(8, 7 / globalScale));
+          ? Math.max(7, Math.min(11, 10 / globalScale))
+          : Math.max(4, Math.min(7, 6 / globalScale));
         ctx.font = `${isActive ? "700" : "400"} ${fs}px Inter, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        const label = name.length > 24 ? name.slice(0, 22) + "…" : name;
+        const label = name.length > 24 ? name.slice(0, 22) + "\u2026" : name;
         ctx.fillStyle = isActive
           ? isEvening
             ? "#fef3c7"
@@ -548,84 +675,137 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     ],
   );
 
-  const paintLink = useCallback((link, ctx) => {
-    const start = link.source;
-    const end = link.target;
-    if (!start || !end || typeof start !== "object") return;
+  // ── Link painter ────────────────────────────────────────────────────────────
+  const paintLink = useCallback(
+    (link, ctx) => {
+      const start = link.source;
+      const end = link.target;
+      if (!start || !end || typeof start !== "object") return;
 
-    const type = link.type;
-    const color = EDGE_COLOR[type] ?? "#9c9080";
+      const type = link.type;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.setLineDash([]);
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = color;
-    ctx.setLineDash([]);
-
-    if (type === "explicit") {
-      ctx.lineWidth = 0.8;
-      ctx.globalAlpha = 1;
-    } else if (type === "link") {
-      ctx.lineWidth = 0.5;
-      ctx.globalAlpha = 1;
-    } else if (type === "tag") {
-      ctx.lineWidth = 0.4;
-      ctx.globalAlpha = 0.85;
-    } else {
-      // Content similarity — style driven by raw cosine similarity:
-      //   sim ≥ 0.35 : dashed  [6,4] — strong topical overlap
-      //   sim < 0.35 : dotted  [1,4] — weak / moderate overlap
-      ctx.lineWidth = 0.4;
-      ctx.globalAlpha = 0.7;
-      if ((link.sim ?? 0) >= 0.35) {
-        ctx.setLineDash([6, 4]); // dashed — strong similarity
+      if (type === "hierarchy") {
+        // Folder → child line: very thin, subtle
+        ctx.strokeStyle = isEvening ? "#44403c" : "#e7e5e4";
+        ctx.lineWidth = 0.3;
+        ctx.globalAlpha = 0.4;
+      } else if (type === "explicit") {
+        // Explicit linked note (originNoteId) — solid violet
+        ctx.strokeStyle = EDGE_COLOR.explicit;
+        ctx.lineWidth = 0.8;
+        ctx.globalAlpha = 1;
+      } else if (type === "link") {
+        // Strong [[wiki link]] — solid stone
+        ctx.strokeStyle = EDGE_COLOR.link;
+        ctx.lineWidth = 0.5;
+        ctx.globalAlpha = 1;
+      } else if (type === "tag") {
+        // Shared tag — dashed gray
+        ctx.strokeStyle = EDGE_COLOR.tag;
+        ctx.lineWidth = 0.4;
+        ctx.globalAlpha = 0.85;
+        ctx.setLineDash([4, 3]);
+      } else if (type === "content") {
+        // Content similarity — style by cosine sim
+        ctx.lineWidth = 0.4;
+        ctx.globalAlpha = 0.7;
+        if ((link.sim ?? 0) >= 0.35) {
+          ctx.strokeStyle = EDGE_COLOR.content;
+          ctx.setLineDash([6, 4]); // dashed — strong
+        } else {
+          ctx.strokeStyle = "#57534e";
+          ctx.setLineDash([1, 4]); // dotted — weak
+        }
       } else {
-        ctx.strokeStyle = "#57534e"; // stone-600 — cooler tone for weak links
-        ctx.setLineDash([1, 4]); // dotted — weak similarity
+        ctx.strokeStyle = isEvening ? "#44403c" : "#d6d3d1";
+        ctx.lineWidth = 0.4;
+        ctx.globalAlpha = 0.4;
       }
-    }
 
-    ctx.stroke();
-    ctx.restore();
-  }, []);
+      ctx.stroke();
+      ctx.restore();
+    },
+    [isEvening],
+  );
 
-  // ── Node spacing ──────────────────────────────────────────────────────────
+  // ── Force tuning ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!fgRef.current) return;
-    // Moderate repulsion — keeps nodes from overlapping
-    // On mobile: less repulsion + shorter link distance so nodes cluster closer
     const charge = fgRef.current.d3Force("charge");
-    if (charge) charge.strength(isMobile ? -12 : -30);
-    // Soft link springs — easy to deform manually
+    if (charge) charge.strength(isMobile ? -8 : -12);
     const link = fgRef.current.d3Force("link");
-    if (link) link.distance(isMobile ? 10 : 50).strength(0.3);
-    // Very gentle gravity — just enough to keep isolated nodes nearby,
-    // but weak enough that manual drags stick
-    fgRef.current.d3Force("x", forceX(0).strength(0.02));
-    fgRef.current.d3Force("y", forceY(0).strength(0.02));
-    // Disable the default center force — it fights with forceX/forceY
+    if (link)
+      link
+        .distance((l) => {
+          if (l.type === "hierarchy") return isMobile ? 35 : 50;
+          return isMobile ? 8 : 12;
+        })
+        .strength((l) => (l.type === "hierarchy" ? 0.15 : 0.06));
+    fgRef.current.d3Force("x", forceX(0).strength(0.005));
+    fgRef.current.d3Force("y", forceY(0).strength(0.005));
     fgRef.current.d3Force("center", null);
-    fgRef.current.d3ReheatSimulation?.();
   }, [graphData, isMobile]);
 
+  // Inject simulation energy whenever the expanded set changes so new nodes
+  // animate outward. We do this in a separate effect (after the force-tuning
+  // effect has applied the new forces) using a short timeout.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fgRef.current?.d3Alpha?.(0.25);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [expandedFolders]);
+
+  // ── Interaction ─────────────────────────────────────────────────────────────
   const handleNodeClick = useCallback(
     (node) => {
-      if (node.id) onNodeClick(String(node.id));
+      if (node.type === "folder") {
+        // Pin this folder so it stays put during expand/collapse
+        pinnedNodeIdRef.current = node.id;
+        if (node.expanded) {
+          // Collapse: remove this folder (and all its descendant folders) from expanded set
+          setExpandedFolders((prev) => {
+            const next = new Set(prev);
+            const removeRecursive = (fid) => {
+              next.delete(fid);
+              for (const f of folders) {
+                if (f.parentId === fid) removeRecursive(f.id);
+              }
+            };
+            removeRecursive(node.folderId);
+            return next;
+          });
+          fitDone.current = false;
+        } else {
+          // Expand
+          const pos = nodePositionsRef.current.get(node.id);
+          expandOriginRef.current = {
+            folderId: node.folderId,
+            x: pos?.x ?? node.x ?? 0,
+            y: pos?.y ?? node.y ?? 0,
+          };
+          setExpandedFolders((prev) => new Set([...prev, node.folderId]));
+          fitDone.current = false;
+        }
+      } else if (node.id) {
+        onNodeClick(String(node.id));
+      }
     },
-    [onNodeClick],
+    [onNodeClick, folders],
   );
+
   const handleNodeHover = useCallback((node) => {
     setHoveredId(node?.id != null ? String(node.id) : null);
     document.body.style.cursor = node ? "pointer" : "default";
   }, []);
 
   return (
-    <div
-      className="flex-1 flex flex-col h-full bg-(--color-background)"
-      // style={{ background: "#f9f7f0" }}
-    >
-      {/* Canvas */}
+    <div className="flex-1 flex flex-col h-full bg-(--color-background)">
       <div
         ref={containerRef}
         className="flex-1 relative overflow-hidden"
@@ -636,12 +816,12 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
             className="absolute inset-0 flex flex-col items-center justify-center"
             style={{ color: "#9c9080" }}
           >
-            <div className="text-5xl mb-3">🕸️</div>
+            <div className="text-5xl mb-3">{"\uD83D\uDD78\uFE0F"}</div>
             <p className="text-sm font-medium" style={{ color: "#6b6457" }}>
-              No connections yet
+              No notes yet
             </p>
             <p className="text-xs mt-1" style={{ color: "#9c9080" }}>
-              Add shared tags or [[link notes]] to see connections
+              Create notes to see the graph
             </p>
           </div>
         ) : dims.width > 0 && dims.height > 0 ? (
@@ -651,9 +831,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
             width={dims.width}
             height={dims.height}
             nodeId="id"
-            nodeLabel={(n) =>
-              `${n.name}${n.tags?.length ? " · " + n.tags.map((t) => "#" + t).join(" ") : ""}`
-            }
+            nodeLabel={() => ""}
             nodeCanvasObject={paintNode}
             nodeCanvasObjectMode={() => "replace"}
             linkCanvasObject={paintLink}
@@ -663,25 +841,31 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
             onNodeClick={handleNodeClick}
             onNodeHover={handleNodeHover}
             onNodeDragEnd={(node) => {
-              // Pin the node at its dropped position so forces don't pull it back
               node.fx = node.x;
               node.fy = node.y;
             }}
-            warmupTicks={100}
-            cooldownTicks={100}
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.4}
+            warmupTicks={0}
+            cooldownTicks={1000}
+            d3AlphaDecay={0.008}
+            d3VelocityDecay={0.7}
             onEngineStop={() => {
+              // Unpin the folder node once the simulation settles
+              if (pinnedNodeIdRef.current) {
+                const gd = fgRef.current?.graphData?.();
+                if (gd) {
+                  const pinned = gd.nodes.find(
+                    (n) => n.id === pinnedNodeIdRef.current,
+                  );
+                  if (pinned) {
+                    pinned.fx = undefined;
+                    pinned.fy = undefined;
+                  }
+                }
+                pinnedNodeIdRef.current = null;
+              }
               if (fitDone.current) return;
               fitDone.current = true;
-              const single = graphData.nodes.length <= 1;
-              const padding = single
-                ? isMobile
-                  ? 100
-                  : 400
-                : isMobile
-                  ? 40
-                  : 160;
+              const padding = isMobile ? 40 : 80;
               setTimeout(() => fgRef.current?.zoomToFit(300, padding), 50);
             }}
           />
