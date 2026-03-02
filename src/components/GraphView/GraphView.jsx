@@ -3,6 +3,12 @@ import ForceGraph2D from "react-force-graph-2d";
 import { forceX, forceY } from "d3-force-3d";
 import { useNoteStore } from "../../store/useNoteStore.js";
 import { useBrowser } from "../../hooks/useBrowserDetect.jsx";
+import {
+  ArrowsInIcon,
+  ArrowsOutIcon,
+  DotOutlineIcon,
+  DotsNineIcon,
+} from "@phosphor-icons/react";
 
 // Edge line colors — each type is visually distinct
 const EDGE_COLOR = {
@@ -239,6 +245,7 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
   const expandOriginRef = useRef(null); // { folderId, x, y }
   const pinnedNodeIdRef = useRef(null); // nodeId to pin (fx/fy) after expand/collapse
   const prevVisibleNodeIdsRef = useRef(new Set()); // IDs present in the last rendered graph
+  const fitSchedulerRef = useRef(null); // timer handle for scheduled fit-to-zoom
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -277,7 +284,32 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     return () => ro.disconnect();
   }, []);
 
-  // ── Graph data (hierarchical drill-down) ──────────────────────────────────
+  // All folder IDs available for expand-all
+  const allFolderIds = useMemo(
+    () => new Set(folders.map((f) => f.id)),
+    [folders],
+  );
+
+  // Whether every folder is currently expanded
+  const allExpanded =
+    allFolderIds.size > 0 &&
+    [...allFolderIds].every((id) => expandedFolders.has(id));
+
+  const handleToggleAll = useCallback(() => {
+    if (allExpanded) {
+      setExpandedFolders(new Set());
+    } else {
+      setExpandedFolders(new Set(allFolderIds));
+    }
+    fitDone.current = false;
+    clearTimeout(fitSchedulerRef.current);
+    fitSchedulerRef.current = setTimeout(() => {
+      const padding = isMobile ? 40 : 80;
+      fgRef.current?.zoomToFit(400, padding);
+    }, 600);
+  }, [allExpanded, allFolderIds, isMobile]);
+
+  // ── Graph data (hierarchical drill-down) ────────────────────────────────
   const graphData = useMemo(() => {
     const accessible = notes.filter(isAccessible);
 
@@ -525,13 +557,9 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
     const timer = setTimeout(() => {
       const padding = isMobile ? 40 : 80;
       fgRef.current?.zoomToFit(400, padding);
-    }, 520);
+    }, 600);
     return () => clearTimeout(timer);
   }, [fitTrigger, dims.width, graphData.nodes.length, isMobile]);
-
-  useEffect(() => {
-    fitDone.current = false;
-  }, [graphData]);
 
   // ── Node painter ────────────────────────────────────────────────────────────
   const paintNode = useCallback(
@@ -781,6 +809,11 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
             return next;
           });
           fitDone.current = false;
+          clearTimeout(fitSchedulerRef.current);
+          fitSchedulerRef.current = setTimeout(() => {
+            const padding = isMobile ? 40 : 80;
+            fgRef.current?.zoomToFit(400, padding);
+          }, 600);
         } else {
           // Expand
           const pos = nodePositionsRef.current.get(node.id);
@@ -791,6 +824,11 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
           };
           setExpandedFolders((prev) => new Set([...prev, node.folderId]));
           fitDone.current = false;
+          clearTimeout(fitSchedulerRef.current);
+          fitSchedulerRef.current = setTimeout(() => {
+            const padding = isMobile ? 40 : 80;
+            fgRef.current?.zoomToFit(400, padding);
+          }, 600);
         }
       } else if (node.id) {
         onNodeClick(String(node.id));
@@ -811,6 +849,24 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
         className="flex-1 relative overflow-hidden"
         style={{ lineHeight: 0, background: graphBg }}
       >
+        {/* Expand / Collapse all toggle */}
+        {graphData.nodes.some((n) => n.type === "folder") && (
+          <button
+            onClick={handleToggleAll}
+            title={allExpanded ? "Collapse all folders" : "Expand all folders"}
+            className="absolute top-2 left-2 z-10 flex items-center gap-1 p-3 rounded-full text-sm font-medium bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:text-(--color-text) hover:bg-(--color-hover) transition-colors shadow-sm"
+          >
+            {allExpanded ? (
+              <div className="flex items-center gap-1">
+                {<ArrowsInIcon size={24} />}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                {<DotsNineIcon size={24} />}
+              </div>
+            )}
+          </button>
+        )}
         {graphData.nodes.length === 0 ? (
           <div
             className="absolute inset-0 flex flex-col items-center justify-center"

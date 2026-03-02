@@ -1649,7 +1649,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
         )}
 
       {/* ── Editor area ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-6 pb-20">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-10 py-2 pb-40">
         {/* Read-only banner */}
         {!canEdit && (
           <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-(--color-background) border border-(--color-border) text-xs text-(--color-text-muted)">
@@ -2069,7 +2069,7 @@ const NoteEditor = ({ noteId, onNavigate }) => {
           title={
             thinkingNoteIds.includes(noteId) ? "Stop thinking" : "I am thinking"
           }
-          className={`fixed bottom-5 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
+          className={`absolute bottom-5 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all z-10 ${
             thinkingNoteIds.includes(noteId)
               ? "bg-(--color-primary) text-(--color-on-primary) shadow-amber-200"
               : "bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:border-amber-400 hover:text-amber-400"

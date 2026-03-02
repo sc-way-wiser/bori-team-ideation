@@ -1,6 +1,6 @@
 // Idearium Service Worker
 const CACHE_NAME = "idearium-v1";
-const SW_VERSION = "1.0.1";
+const SW_VERSION = "1.0.2";
 
 // ── Install: skip waiting immediately so new SW activates right away ───────────
 self.addEventListener("install", (event) => {
