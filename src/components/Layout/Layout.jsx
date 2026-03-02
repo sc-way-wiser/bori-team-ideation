@@ -35,7 +35,6 @@ const Layout = () => {
   const profileMenuRef = useRef(null);
   const [showGraph, setShowGraph] = useState(() => window.innerWidth >= 1024);
   const [graphExpanded, setGraphExpanded] = useState(false);
-  const [graphFitTrigger, setGraphFitTrigger] = useState(0);
   const [handleVisible, setHandleVisible] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -65,7 +64,6 @@ const Layout = () => {
     if (window.innerWidth < 1024) setShowGraph(false);
     if (graphExpanded) {
       setGraphExpanded(false);
-      setGraphFitTrigger((n) => n + 1);
     }
     setSidebarOpen(false);
   };
@@ -423,7 +421,6 @@ const Layout = () => {
                         // Defer expand/collapse until the handle has faded out
                         setTimeout(() => {
                           setGraphExpanded((v) => !v);
-                          setGraphFitTrigger((n) => n + 1);
                         }, 200);
                       }}
                       title={graphExpanded ? "Collapse graph" : "Expand graph"}
@@ -443,7 +440,6 @@ const Layout = () => {
                   )}
                   <div className="flex-1 overflow-hidden h-full">
                     <GraphView
-                      fitTrigger={graphFitTrigger}
                       onClose={() => {
                         setShowGraph(false);
                         setGraphExpanded(false);

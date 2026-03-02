@@ -220,7 +220,7 @@ function cosineSim(vecA, vecB) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
+const GraphView = ({ onClose, onNodeClick }) => {
   const {
     notes,
     folders,
@@ -550,16 +550,6 @@ const GraphView = ({ onClose, onNodeClick, fitTrigger }) => {
 
     return { nodes: allNodes, links: allLinks };
   }, [notes, folders, defaultFolderName, currentUserId, expandedFolders]);
-
-  // Re-fit on panel resize
-  useEffect(() => {
-    if (!fitTrigger) return;
-    const timer = setTimeout(() => {
-      const padding = isMobile ? 40 : 80;
-      fgRef.current?.zoomToFit(400, padding);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [fitTrigger, dims.width, graphData.nodes.length, isMobile]);
 
   // ── Node painter ────────────────────────────────────────────────────────────
   const paintNode = useCallback(
