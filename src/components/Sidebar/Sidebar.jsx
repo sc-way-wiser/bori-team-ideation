@@ -1767,6 +1767,13 @@ const Sidebar = ({ onNoteSelect, onClose }) => {
           <XIcon size={20} />
         </button>
       </div>
+      {/* desktop header */}
+      <div className="hidden md:flex items-center gap-2 px-3 pt-2">
+        {/* <LightbulbIcon size={20} className="text-(--color-primary-dk)" /> */}
+        <span className="text-2xl font-bold text-stone-400 tracking-wider">
+          Idearium
+        </span>
+      </div>
 
       {/* Search */}
       <div className="p-3 ">

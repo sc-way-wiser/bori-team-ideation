@@ -1185,45 +1185,40 @@ const NoteEditor = ({ noteId, onNavigate }) => {
 
   /* ── Conditional returns AFTER all hooks ── */
 
-  if (!isAccessible(note)) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-(--color-text-sec) gap-4 px-6">
-        <svg
-          width="52"
-          height="52"
-          viewBox="0 0 24 24"
-          fill="none"
-          className="text-(--color-primary)"
-        >
-          <path
-            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="2" />
-        </svg>
-        <div className="text-center">
-          <p className="text-xl font-semibold text-(--color-text)">
-            Welcome to idearium
-          </p>
-          <p className="text-sm mt-1 text-(--color-text-sec)">
-            Your personal knowledge base. Create a note to get started.
-          </p>
-        </div>
-        <div className="mt-2 text-xs text-(--color-text-muted) text-center space-y-1">
-          <p>
-            💡 Type{" "}
-            <code className="bg-(--color-input) px-1 rounded">{"[["}</code> in
-            the editor to link notes
-          </p>
-          <p>🏷️ Add tags with the tag input below the note title</p>
-          <p>🕸️ Open Graph View to visualize connections</p>
-        </div>
-      </div>
-    );
-  }
+  // if (!isAccessible(note)) {
+  //   return (
+  //     <div className="flex-1 flex flex-col items-center justify-center text-(--color-text-sec) gap-4 px-6">
+  //       <svg
+  //         width="52"
+  //         height="52"
+  //         viewBox="0 0 24 24"
+  //         fill="none"
+  //         className="text-(--color-primary)"
+  //       >
+  //         <path
+  //           d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+  //           stroke="currentColor"
+  //           strokeWidth="2"
+  //           strokeLinecap="round"
+  //           strokeLinejoin="round"
+  //         />
+  //         <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="2" />
+  //       </svg>
+  //       <div className="text-center">
+  //         <p className="text-xl font-semibold text-(--color-text)">
+  //           Welcome to idearium
+  //         </p>
+  //         <p className="text-sm mt-1 text-(--color-text-sec)">
+  //           Your personal knowledge base. Create a note to get started.
+  //         </p>
+  //       </div>
+  //       <div className="mt-2 text-xs text-(--color-text-muted) text-center space-y-1">
+  //         <p>🏷️ Add tags with the tag input below the note title</p>
+  //         <p>🕸️ Open Graph View to visualize connections</p>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   if (!note) {
     return (

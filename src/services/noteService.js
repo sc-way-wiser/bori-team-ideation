@@ -41,7 +41,9 @@ const toRow = (note) => ({
 
 // ── API service ──────────────────────────────────────────────────────────────
 
-/** Fetch all notes ordered by most-recently-updated */
+/** Fetch all notes the current user is allowed to see.
+ * Scoping is handled entirely by RLS on bori_ideation — no app-level filter needed.
+ */
 export async function fetchAllNotes() {
   const { data, error } = await supabase
     .from("bori_ideation")

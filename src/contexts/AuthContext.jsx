@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase.js";
+import { useNoteStore } from "../store/useNoteStore.js";
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const clearUserState = useNoteStore((s) => s.clearUserState);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -18,7 +20,11 @@ export const AuthProvider = ({ children }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        // Wipe all in-memory user data so the next user starts completely clean
+        clearUserState();
+      }
       setSession(session);
       setIsAuthLoading(false);
     });

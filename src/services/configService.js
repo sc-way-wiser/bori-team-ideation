@@ -28,6 +28,7 @@ export const CONFIG_DEFAULTS = {
   // Note-store fields stored in ideation_config
   defaultFolderName: "Notes",
   thinkingNoteIds: [],
+  lastOpenedNoteId: null,
 };
 
 const toConfig = (row) => ({
@@ -58,6 +59,7 @@ const toConfig = (row) => ({
   // Note-store fields
   defaultFolderName: row.default_folder_name ?? "Notes",
   thinkingNoteIds: row.thinking_note_ids ?? [],
+  lastOpenedNoteId: row.last_opened_note_id ?? null,
 });
 
 const toRow = (cfg, userId) => ({
@@ -87,6 +89,7 @@ const toRow = (cfg, userId) => ({
   // Note-store fields
   default_folder_name: cfg.defaultFolderName,
   thinking_note_ids: cfg.thinkingNoteIds,
+  last_opened_note_id: cfg.lastOpenedNoteId ?? null,
 });
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -147,6 +150,19 @@ export async function saveDefaultFolderName(name, userId) {
       "[configService] saveDefaultFolderName error:",
       error.message,
     );
+  }
+}
+
+/** Persist the last-opened note ID for userId. */
+export async function saveLastOpenedNoteId(noteId, userId) {
+  const { error } = await supabase
+    .from("ideation_config")
+    .upsert(
+      { user_id: userId, last_opened_note_id: noteId ?? null },
+      { onConflict: "user_id" },
+    );
+  if (error) {
+    console.error("[configService] saveLastOpenedNoteId error:", error.message);
   }
 }
 

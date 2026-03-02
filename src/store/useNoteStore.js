@@ -20,6 +20,7 @@ import {
   fetchConfig,
   saveDefaultFolderName,
   saveThinkingNoteIds,
+  saveLastOpenedNoteId,
 } from "../services/configService.js";
 
 // Debounce map: noteId → timeout handle
@@ -48,7 +49,7 @@ function isNoteEmpty(note) {
   return !hasTitle && !hasContent && !hasTags;
 }
 
-export const useNoteStore = create((set, get) => ({
+const INITIAL_STATE = {
   notes: [],
   folders: [],
   defaultFolderName: "Notes",
@@ -57,6 +58,13 @@ export const useNoteStore = create((set, get) => ({
   isLoading: false,
   currentUserId: null,
   thinkingNoteIds: [],
+};
+
+export const useNoteStore = create((set, get) => ({
+  ...INITIAL_STATE,
+
+  // ── Wipe all user-specific state (called on sign-out / user switch) ──────
+  clearUserState: () => set({ ...INITIAL_STATE }),
 
   // ── Boot: load everything from Supabase ─────────────────────────────────
   loadNotes: async () => {
@@ -203,13 +211,20 @@ export const useNoteStore = create((set, get) => ({
       }
     }
 
+    // Only consider notes the current user owns when seeding the initial
+    // active note — never jump to a note belonging to another user.
+    const ownNotes = cleaned.filter((n) => n.ownerId === user.id);
     set({
       notes: cleaned,
       folders,
       defaultFolderName,
       thinkingNoteIds,
       isLoading: false,
-      activeNoteId: get().activeNoteId ?? cleaned[0]?.id ?? null,
+      activeNoteId:
+        config.lastOpenedNoteId &&
+        ownNotes.some((n) => n.id === config.lastOpenedNoteId)
+          ? config.lastOpenedNoteId
+          : (ownNotes[0]?.id ?? null),
     });
   },
 
@@ -414,6 +429,9 @@ export const useNoteStore = create((set, get) => ({
       }
     }
     set({ activeNoteId: id });
+    // Persist last opened note per-user so it can be restored on next load
+    const userId = get().currentUserId;
+    if (userId && id) saveLastOpenedNoteId(id, userId);
   },
 
   requestShareFor: (id) => set({ activeNoteId: id, pendingShareNoteId: id }),
