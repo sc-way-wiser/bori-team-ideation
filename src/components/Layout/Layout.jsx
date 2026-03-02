@@ -12,6 +12,7 @@ import {
   SunIcon,
   MoonIcon,
   PlusIcon,
+  CubeIcon,
 } from "@phosphor-icons/react";
 import { useNoteStore } from "../../store/useNoteStore.js";
 import { useConfigStore } from "../../store/useConfigStore.js";
@@ -20,6 +21,7 @@ import SignIn from "../Auth/SignIn.jsx";
 import Sidebar from "../Sidebar/Sidebar.jsx";
 import NoteEditor from "../Editor/Editor.jsx";
 import GraphView from "../GraphView/GraphView.jsx";
+import GraphView3D from "../GraphView/GraphView3D.jsx";
 import Settings from "../Settings/Settings.jsx";
 
 const Layout = () => {
@@ -36,6 +38,7 @@ const Layout = () => {
   const [showGraph, setShowGraph] = useState(() => window.innerWidth >= 1024);
   const [graphExpanded, setGraphExpanded] = useState(false);
   const [handleVisible, setHandleVisible] = useState(true);
+  const [graphMode, setGraphMode] = useState("2d"); // "2d" | "3d"
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const { loadConfig } = useConfigStore();
@@ -439,16 +442,47 @@ const Layout = () => {
                     </button>
                   )}
                   <div className="flex-1 overflow-hidden h-full">
-                    <GraphView
-                      onClose={() => {
-                        setShowGraph(false);
-                        setGraphExpanded(false);
-                      }}
-                      onNodeClick={(id) => {
-                        setActiveNote(id);
-                        if (window.innerWidth < 1024) setShowGraph(false);
-                      }}
-                    />
+                    {/* 3D toggle button */}
+                    <button
+                      onClick={() =>
+                        setGraphMode((m) => (m === "2d" ? "3d" : "2d"))
+                      }
+                      title={
+                        graphMode === "2d"
+                          ? "Switch to 3D view"
+                          : "Switch to 2D view"
+                      }
+                      className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold bg-(--color-surface) border border-(--color-border) text-(--color-text-muted) hover:text-(--color-text) hover:bg-(--color-hover) transition-colors shadow-sm"
+                    >
+                      <CubeIcon
+                        size={16}
+                        weight={graphMode === "3d" ? "fill" : "regular"}
+                      />
+                      {graphMode === "2d" ? "3D" : "2D"}
+                    </button>
+                    {graphMode === "3d" ? (
+                      <GraphView3D
+                        onClose={() => {
+                          setShowGraph(false);
+                          setGraphExpanded(false);
+                        }}
+                        onNodeClick={(id) => {
+                          setActiveNote(id);
+                          if (window.innerWidth < 1024) setShowGraph(false);
+                        }}
+                      />
+                    ) : (
+                      <GraphView
+                        onClose={() => {
+                          setShowGraph(false);
+                          setGraphExpanded(false);
+                        }}
+                        onNodeClick={(id) => {
+                          setActiveNote(id);
+                          if (window.innerWidth < 1024) setShowGraph(false);
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               )}
