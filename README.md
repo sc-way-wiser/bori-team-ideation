@@ -9,3 +9,4 @@ Currently, two official plugins are available:
 
 # bori-ideation
 # bori-team-ideation
+# bori-team-ideation
