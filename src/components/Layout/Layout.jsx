@@ -49,6 +49,7 @@ const Layout = () => {
   const [showSignIn, setShowSignIn] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showMaxTabsWarning, setShowMaxTabsWarning] = useState(false);
+  const [avatarImgError, setAvatarImgError] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [profileMenuRect, setProfileMenuRect] = useState(null);
   const profileRef = useRef(null);
@@ -101,6 +102,7 @@ const Layout = () => {
     const nextId = user?.id ?? null;
     if (prevId !== nextId) {
       prevUserIdRef.current = nextId;
+      setAvatarImgError(false);
       const freshId = nextTabId();
       setTabs([{ id: freshId, noteId: null }]);
       setActiveTabId(freshId);
@@ -435,12 +437,13 @@ const Layout = () => {
             }}
             className="focus:outline-none"
           >
-            {user.user_metadata?.avatar_url ? (
+            {user.user_metadata?.avatar_url && !avatarImgError ? (
               <img
                 src={
                   user.user_metadata.avatar_url ?? user.user_metadata?.picture
                 }
                 alt={user.user_metadata?.full_name ?? "User"}
+                onError={() => setAvatarImgError(true)}
                 className="w-8 h-8 rounded-full object-cover border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
               />
             ) : (
@@ -515,13 +518,14 @@ const Layout = () => {
                 }}
                 className="focus:outline-none"
               >
-                {user.user_metadata?.avatar_url ? (
+                {user.user_metadata?.avatar_url && !avatarImgError ? (
                   <img
                     src={
                       user.user_metadata.avatar_url ??
                       user.user_metadata?.picture
                     }
                     alt={user.user_metadata?.full_name ?? "User"}
+                    onError={() => setAvatarImgError(true)}
                     className="w-10 h-10 rounded-full object-cover border-2 border-(--color-border) hover:border-(--color-primary-dk) transition-colors"
                   />
                 ) : (
