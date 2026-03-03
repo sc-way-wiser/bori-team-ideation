@@ -142,7 +142,11 @@ const Layout = () => {
   );
 
   const addNewTab = useCallback(() => {
-    if (tabs.length >= MAX_TABS) {
+    // If already on an empty tab, nothing to do
+    const curTab = tabs.find((t) => t.id === activeTabId);
+    if (curTab && !curTab.noteId) return;
+
+    if (tabs.filter((t) => t.noteId).length >= MAX_TABS) {
       setShowMaxTabsWarning(true);
       return;
     }
@@ -150,7 +154,7 @@ const Layout = () => {
     // Open an empty tab — user can pick a note or create one from EmptyState
     setTabs((prev) => [...prev, { id: tabId, noteId: null }]);
     setActiveTabId(tabId);
-  }, [tabs.length]);
+  }, [tabs, activeTabId]);
 
   const closeTab = useCallback(
     (tabId) => {
@@ -212,7 +216,7 @@ const Layout = () => {
         setActiveNote(id);
       } else {
         // 3. Open in a new tab — respect MAX_TABS
-        if (tabs.length >= MAX_TABS) {
+        if (tabs.filter((t) => t.noteId).length >= MAX_TABS) {
           setShowMaxTabsWarning(true);
           return;
         }
@@ -605,7 +609,7 @@ const Layout = () => {
                       {/* Tab list — fills remaining width, tabs share space equally like Chrome */}
                       <div className="flex flex-1 min-w-0 overflow-hidden">
                         {tabs
-                          .filter((tab) => tab.noteId)
+                          .filter((tab) => tab.noteId || tab.id === activeTabId)
                           .map((tab) => (
                             <button
                               key={tab.id}
@@ -634,16 +638,17 @@ const Layout = () => {
                             </button>
                           ))}
                       </div>
-                      {/* + new tab — hidden once limit is reached */}
-                      {tabs.length < MAX_TABS && (
-                        <button
-                          onClick={addNewTab}
-                          title="New tab"
-                          className="p-4 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors shrink-0"
-                        >
-                          <PlusIcon size={14} />
-                        </button>
-                      )}
+                      {/* + new tab — hidden once limit is reached or already on empty tab */}
+                      {tabs.filter((t) => t.noteId).length < MAX_TABS &&
+                        tabs.find((t) => t.id === activeTabId)?.noteId && (
+                          <button
+                            onClick={addNewTab}
+                            title="New tab"
+                            className="p-4 text-(--color-text-sec) hover:bg-(--color-hover) hover:text-(--color-text) transition-colors shrink-0"
+                          >
+                            <PlusIcon size={14} />
+                          </button>
+                        )}
                     </div>
 
                     {/* Editor area */}
