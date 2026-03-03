@@ -348,8 +348,13 @@ const GraphView3D = forwardRef(
         dCtx.fill();
         const dotTex = new THREE.CanvasTexture(dotCanvas);
         const dotSprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({ map: dotTex, depthWrite: false }),
+          new THREE.SpriteMaterial({
+            map: dotTex,
+            depthWrite: false,
+            depthTest: false,
+          }),
         );
+        dotSprite.renderOrder = 2;
 
         // 1/3 of original sizes ×1.5 = 0.5× original (folder expanded ~2.1, collapsed ~1.5, note ~1.05)
         const dotSize =
@@ -384,8 +389,11 @@ const GraphView3D = forwardRef(
         label.padding = 0;
         // More margin: dotSize radius + 6 units of breathing room
         label.position.set(0, -(dotSize + 6), 0);
+        label.renderOrder = 2;
+        label.material.depthTest = false;
 
         const group = new THREE.Group();
+        group.renderOrder = 2;
 
         // Invisible sphere mesh — gives the raycaster a solid hit surface for
         // drag and click. Without this, THREE.Group has no geometry to raycast.
@@ -415,8 +423,13 @@ const GraphView3D = forwardRef(
           tc.fill();
           const thinkTex = new THREE.CanvasTexture(thinkCanvas);
           const thinkSprite = new THREE.Sprite(
-            new THREE.SpriteMaterial({ map: thinkTex, depthWrite: false }),
+            new THREE.SpriteMaterial({
+              map: thinkTex,
+              depthWrite: false,
+              depthTest: false,
+            }),
           );
+          thinkSprite.renderOrder = 2;
           thinkSprite.scale.set(dotSize * 1.2, dotSize * 1.2, 1);
           thinkSprite.position.set(dotSize * 0.9, dotSize * 0.9, 0);
           group.add(thinkSprite);
@@ -430,6 +443,8 @@ const GraphView3D = forwardRef(
           badge.backgroundColor = "transparent";
           badge.padding = 0;
           badge.position.set(0, -(dotSize + 13), 0);
+          badge.renderOrder = 2;
+          badge.material.depthTest = false;
           group.add(badge);
         }
 
