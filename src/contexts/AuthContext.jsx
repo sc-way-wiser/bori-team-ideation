@@ -13,10 +13,11 @@ export const AuthProvider = ({ children }) => {
   const clearUserState = useNoteStore((s) => s.clearUserState);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setIsAuthLoading(false);
-    });
+    // Detect if we're returning from an OAuth redirect (hash contains access_token or error)
+    const hashParams = window.location.hash;
+    const isOAuthCallback =
+      hashParams.includes("access_token") ||
+      hashParams.includes("error_description");
 
     const {
       data: { subscription },
@@ -28,6 +29,15 @@ export const AuthProvider = ({ children }) => {
       setSession(session);
       setIsAuthLoading(false);
     });
+
+    // If this is an OAuth callback, let onAuthStateChange handle session
+    // resolution — getSession() may resolve before the hash is consumed.
+    if (!isOAuthCallback) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        setIsAuthLoading(false);
+      });
+    }
 
     return () => subscription.unsubscribe();
   }, []);
