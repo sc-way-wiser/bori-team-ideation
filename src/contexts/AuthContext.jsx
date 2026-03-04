@@ -13,25 +13,36 @@ export const AuthProvider = ({ children }) => {
   const clearUserState = useNoteStore((s) => s.clearUserState);
 
   useEffect(() => {
-    // Detect if we're returning from an OAuth redirect (hash contains access_token or error)
-    const hashParams = window.location.hash;
+    // Detect PKCE OAuth callback (?code=) or implicit callback (#access_token=)
+    const url = new URL(window.location.href);
     const isOAuthCallback =
-      hashParams.includes("access_token") ||
-      hashParams.includes("error_description");
+      url.searchParams.has("code") ||
+      url.hash.includes("access_token") ||
+      url.hash.includes("error_description");
+
+    // Safety timeout: if OAuth callback doesn't resolve within 10s, stop loading
+    let safetyTimer;
+    if (isOAuthCallback) {
+      safetyTimer = setTimeout(() => {
+        setIsAuthLoading(false);
+      }, 10_000);
+    }
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") {
-        // Wipe all in-memory user data so the next user starts completely clean
         clearUserState();
       }
       setSession(session);
       setIsAuthLoading(false);
+      if (safetyTimer) clearTimeout(safetyTimer);
     });
 
-    // If this is an OAuth callback, let onAuthStateChange handle session
-    // resolution — getSession() may resolve before the hash is consumed.
+    // If NOT an OAuth callback, eagerly fetch existing session.
+    // During OAuth callbacks, onAuthStateChange will fire once the
+    // PKCE code exchange completes — calling getSession() here would
+    // race and resolve with null before the exchange finishes.
     if (!isOAuthCallback) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         setSession(session);
@@ -39,7 +50,10 @@ export const AuthProvider = ({ children }) => {
       });
     }
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (safetyTimer) clearTimeout(safetyTimer);
+    };
   }, []);
 
   const handleGoogleSignIn = async () => {
